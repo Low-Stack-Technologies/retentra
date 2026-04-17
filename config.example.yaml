@@ -1,0 +1,44 @@
+# Example configuration for:
+#   retentra config.yaml
+
+sources:
+  # Include an existing directory directly in the archive.
+  - type: filesystem
+    path: /srv/app/data
+    target: app/data
+
+  # Generate backup contents with commands, then collect selected outputs.
+  - type: command
+    workdir: "{tmpdir}"
+    commands:
+      - mkdir -p "{tmpdir}/export"
+      - sqlite3 /srv/app/app.db ".backup '{tmpdir}/export/app.db'"
+    collect:
+      - path: "{tmpdir}/export/app.db"
+        target: app/app.db
+
+archive:
+  name: backup-{date}.tar.gz
+  format: tar
+  compression: gzip
+
+outputs:
+  - type: filesystem
+    path: /var/backups
+
+  - type: sftp
+    host: backup.example.com
+    port: 22
+    username: backup
+    remote_path: /backups
+    identity_file: ~/.ssh/id_ed25519
+
+# Password authentication is also supported for SFTP:
+#
+# outputs:
+#   - type: sftp
+#     host: backup.example.com
+#     port: 22
+#     username: backup
+#     remote_path: /backups
+#     password: change-me
