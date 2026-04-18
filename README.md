@@ -10,6 +10,21 @@ retentra config.yaml
 The configuration describes where backup contents come from, how the archive is
 named and encoded, and where the finished archive should be written or uploaded.
 
+## Install
+
+Install the latest Linux amd64 release:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Low-Stack-Technologies/retentra/main/install.sh | bash
+```
+
+The installer writes `retentra` to `$HOME/.local/bin` by default. To choose a
+different directory:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Low-Stack-Technologies/retentra/main/install.sh | INSTALL_DIR=/usr/local/bin bash
+```
+
 ## Build And Test
 
 Prerequisites:
