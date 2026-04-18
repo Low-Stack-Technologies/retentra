@@ -18,6 +18,9 @@ Install the latest Linux amd64 release:
 curl -fsSL https://raw.githubusercontent.com/Low-Stack-Technologies/retentra/main/install.sh | bash
 ```
 
+This requires a published GitHub Release with the `retentra-linux-amd64` asset.
+The release workflow attaches that asset after a release is published.
+
 The installer writes `retentra` to `$HOME/.local/bin` by default. To choose a
 different directory:
 

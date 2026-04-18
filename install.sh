@@ -31,9 +31,33 @@ mkdir -p "$install_dir"
 
 echo "Downloading retentra from $download_url"
 if command -v curl >/dev/null 2>&1; then
-  curl -fsSL "$download_url" -o "$tmpdir/retentra"
+  if ! curl -fsSL "$download_url" -o "$tmpdir/retentra"; then
+    cat >&2 <<EOF
+Failed to download retentra.
+
+Expected release asset:
+  $download_url
+
+Publish a GitHub Release for $repo and wait for the release workflow to attach
+the $asset asset. If the release already exists, rerun the release workflow for
+that tag.
+EOF
+    exit 1
+  fi
 elif command -v wget >/dev/null 2>&1; then
-  wget -qO "$tmpdir/retentra" "$download_url"
+  if ! wget -qO "$tmpdir/retentra" "$download_url"; then
+    cat >&2 <<EOF
+Failed to download retentra.
+
+Expected release asset:
+  $download_url
+
+Publish a GitHub Release for $repo and wait for the release workflow to attach
+the $asset asset. If the release already exists, rerun the release workflow for
+that tag.
+EOF
+    exit 1
+  fi
 else
   echo "curl or wget is required to install retentra" >&2
   exit 1
