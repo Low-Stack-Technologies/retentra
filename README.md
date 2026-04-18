@@ -10,6 +10,36 @@ retentra config.yaml
 The configuration describes where backup contents come from, how the archive is
 named and encoded, and where the finished archive should be written or uploaded.
 
+## Build And Test
+
+Prerequisites:
+
+- Go
+- Docker, only for SFTP integration tests
+
+Run the CLI directly during development:
+
+```sh
+go run ./cmd/retentra config.yaml
+```
+
+Build a local binary:
+
+```sh
+make build
+./bin/retentra config.yaml
+```
+
+Run tests:
+
+```sh
+make test
+make test-integration
+```
+
+The integration test starts a temporary Docker SFTP server and is not included
+in the default test target.
+
 ## Backup Flow
 
 `retentra` is designed around three steps:
@@ -122,9 +152,9 @@ archive:
 Fields:
 
 - `name`: Archive filename template. `{date}` is replaced with the run date.
-- `format`: Archive container format, such as `tar`, `zip`, or `7z`.
-- `compression`: Compression algorithm, such as `gzip`. Use `none` when the
-  selected format should not be compressed.
+- `format`: Archive container format. Supported values are `tar` and `zip`.
+- `compression`: Compression algorithm. Supported values are `gzip` or `none`
+  for `tar`, and `none` for `zip`.
 
 ### Outputs
 
@@ -157,6 +187,7 @@ outputs:
     username: backup
     remote_path: /backups
     identity_file: ~/.ssh/id_ed25519
+    known_hosts: ~/.ssh/known_hosts
 ```
 
 Fields:
@@ -168,6 +199,41 @@ Fields:
 - `identity_file`: SSH private key used for authentication.
 - `password`: Password used for authentication when an SSH private key is not
   used.
+- `known_hosts`: Known hosts file used for host key verification. Defaults to
+  `~/.ssh/known_hosts`.
+- `insecure_ignore_host_key`: Set to `true` to skip host key verification for
+  local testing or controlled environments.
 
 Use either `identity_file` or `password` for SFTP authentication. Avoid storing
 passwords or other secrets directly in the config file when possible.
+
+### Notifications
+
+The `notifications` section sends process status messages after a run succeeds
+or fails. Notifications do not send the archive file.
+
+#### Discord Notification
+
+```yaml
+notifications:
+  - type: discord
+    webhook_url: https://discord.com/api/webhooks/...
+```
+
+#### NTFY Notification
+
+```yaml
+notifications:
+  - type: ntfy
+    url: https://ntfy.sh/my-topic
+    username: optional-username
+    password: optional-password
+```
+
+Fields:
+
+- `webhook_url`: Discord webhook URL.
+- `url`: NTFY topic URL.
+- `username`: Optional NTFY username.
+- `password`: Optional NTFY password. Set both `username` and `password` when
+  using NTFY authentication.

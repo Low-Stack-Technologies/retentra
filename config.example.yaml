@@ -32,6 +32,7 @@ outputs:
     username: backup
     remote_path: /backups
     identity_file: ~/.ssh/id_ed25519
+    known_hosts: ~/.ssh/known_hosts
 
 # Password authentication is also supported for SFTP:
 #
@@ -42,3 +43,12 @@ outputs:
 #     username: backup
 #     remote_path: /backups
 #     password: change-me
+
+notifications:
+  - type: discord
+    webhook_url: https://discord.com/api/webhooks/...
+
+  - type: ntfy
+    url: https://ntfy.sh/my-topic
+    username: optional-username
+    password: optional-password
