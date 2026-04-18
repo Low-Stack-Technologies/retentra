@@ -12,13 +12,19 @@ import (
 
 type Config struct {
 	Sources       []SourceConfig       `yaml:"sources"`
+	Report        ReportConfig         `yaml:"report"`
 	Archive       ArchiveConfig        `yaml:"archive"`
 	Outputs       []OutputConfig       `yaml:"outputs"`
 	Notifications []NotificationConfig `yaml:"notifications"`
 }
 
+type ReportConfig struct {
+	Title string `yaml:"title"`
+}
+
 type SourceConfig struct {
 	Type     string          `yaml:"type"`
+	Label    string          `yaml:"label"`
 	Path     string          `yaml:"path"`
 	Target   string          `yaml:"target"`
 	Workdir  string          `yaml:"workdir"`
@@ -29,6 +35,7 @@ type SourceConfig struct {
 type CollectConfig struct {
 	Path   string `yaml:"path"`
 	Target string `yaml:"target"`
+	Label  string `yaml:"label"`
 }
 
 type ArchiveConfig struct {
@@ -39,6 +46,7 @@ type ArchiveConfig struct {
 
 type OutputConfig struct {
 	Type         string `yaml:"type"`
+	Label        string `yaml:"label"`
 	Path         string `yaml:"path"`
 	Host         string `yaml:"host"`
 	Port         int    `yaml:"port"`
@@ -98,6 +106,10 @@ func normalizeConfig(cfg *Config) {
 func (cfg Config) Validate() error {
 	var errs []error
 
+	if cfg.Report.Title == "" {
+		errs = append(errs, errors.New("report.title is required"))
+	}
+
 	if len(cfg.Sources) == 0 {
 		errs = append(errs, errors.New("sources must contain at least one source"))
 	}
@@ -139,6 +151,9 @@ func validateSource(i int, source SourceConfig) []error {
 	var errs []error
 	switch source.Type {
 	case "filesystem":
+		if source.Label == "" {
+			errs = append(errs, fmt.Errorf("%s.label is required", prefix))
+		}
 		if source.Path == "" {
 			errs = append(errs, fmt.Errorf("%s.path is required", prefix))
 		}
@@ -158,6 +173,9 @@ func validateSource(i int, source SourceConfig) []error {
 			errs = append(errs, fmt.Errorf("%s.collect must contain at least one entry", prefix))
 		}
 		for j, collect := range source.Collect {
+			if collect.Label == "" {
+				errs = append(errs, fmt.Errorf("%s.collect[%d].label is required", prefix, j))
+			}
 			if collect.Path == "" {
 				errs = append(errs, fmt.Errorf("%s.collect[%d].path is required", prefix, j))
 			}
@@ -186,10 +204,16 @@ func validateOutput(i int, output OutputConfig) []error {
 	var errs []error
 	switch output.Type {
 	case "filesystem":
+		if output.Label == "" {
+			errs = append(errs, fmt.Errorf("%s.label is required", prefix))
+		}
 		if output.Path == "" {
 			errs = append(errs, fmt.Errorf("%s.path is required", prefix))
 		}
 	case "sftp":
+		if output.Label == "" {
+			errs = append(errs, fmt.Errorf("%s.label is required", prefix))
+		}
 		if output.Host == "" {
 			errs = append(errs, fmt.Errorf("%s.host is required", prefix))
 		}

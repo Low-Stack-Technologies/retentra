@@ -34,13 +34,74 @@ func sendNotification(ctx context.Context, notification NotificationConfig, stat
 }
 
 func statusMessage(status Status) string {
-	if status.Success {
-		return fmt.Sprintf("retentra backup succeeded: %s delivered to %s", status.ArchiveName, strings.Join(status.Outputs, ", "))
+	var b strings.Builder
+	title := status.ReportTitle
+	if title == "" {
+		title = "Backup Report"
 	}
-	if status.Error != nil {
-		return fmt.Sprintf("retentra backup failed: %v", status.Error)
+	b.WriteString(title)
+
+	for _, result := range status.SourceResults {
+		writeSourceResult(&b, result)
 	}
-	return "retentra backup failed"
+
+	if status.ArchiveCreated {
+		writeLine(&b, "📦 Archive: Created successfully")
+	} else if status.ArchiveError != nil {
+		writeLine(&b, fmt.Sprintf("❌ Archive: %s", status.ArchiveError))
+	}
+
+	if len(status.Included) > 0 {
+		writeLine(&b, fmt.Sprintf("📁 Included: %s", strings.Join(status.Included, ", ")))
+	}
+
+	for _, result := range status.OutputResults {
+		writeOutputResult(&b, result)
+	}
+
+	if !status.Success && !reportHasFailure(status) && status.Error != nil {
+		writeLine(&b, fmt.Sprintf("❌ Error: %s", status.Error))
+	}
+
+	return b.String()
+}
+
+func reportHasFailure(status Status) bool {
+	for _, result := range status.SourceResults {
+		if !result.Success() {
+			return true
+		}
+	}
+	if status.ArchiveError != nil {
+		return true
+	}
+	for _, result := range status.OutputResults {
+		if !result.Success() {
+			return true
+		}
+	}
+	return false
+}
+
+func writeSourceResult(b *strings.Builder, result ReportResult) {
+	if result.Success() {
+		writeLine(b, fmt.Sprintf("✅ %s", result.Label))
+		return
+	}
+	writeLine(b, fmt.Sprintf("❌ %s: %s", result.Label, result.Error))
+}
+
+func writeOutputResult(b *strings.Builder, result ReportResult) {
+	if result.Success() {
+		writeLine(b, fmt.Sprintf("🚀 %s: Success", result.Label))
+		return
+	}
+	writeLine(b, fmt.Sprintf("❌ %s: %s", result.Label, result.Error))
+}
+
+func writeLine(b *strings.Builder, line string) {
+	b.WriteString("\n")
+	b.WriteString(line)
 }
 
 func sendDiscord(ctx context.Context, webhookURL, message string) error {

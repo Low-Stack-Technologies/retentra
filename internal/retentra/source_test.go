@@ -14,10 +14,11 @@ func TestCollectSourcesRunsCommandWithTmpdir(t *testing.T) {
 		Type:     "command",
 		Workdir:  "{tmpdir}",
 		Commands: []string{`mkdir -p "{tmpdir}/export" && printf data > "{tmpdir}/export/file.txt"`},
-		Collect:  []CollectConfig{{Path: "{tmpdir}/export/file.txt", Target: "generated/file.txt"}},
+		Collect:  []CollectConfig{{Label: "Generated file", Path: "{tmpdir}/export/file.txt", Target: "generated/file.txt"}},
 	}
+	status := Status{}
 
-	items, err := collectSources(context.Background(), []SourceConfig{source}, placeholders{tmpdir: tmpdir, now: time.Now()})
+	items, err := collectSources(context.Background(), []SourceConfig{source}, placeholders{tmpdir: tmpdir, now: time.Now()}, &status)
 	if err != nil {
 		t.Fatalf("collectSources() error = %v", err)
 	}
@@ -29,5 +30,8 @@ func TestCollectSourcesRunsCommandWithTmpdir(t *testing.T) {
 	}
 	if _, err := os.Stat(items[0].Path); err != nil {
 		t.Fatal(err)
+	}
+	if len(status.SourceResults) != 1 || status.SourceResults[0].Label != "Generated file" || !status.SourceResults[0].Success() {
+		t.Fatalf("SourceResults = %#v, want generated file success", status.SourceResults)
 	}
 }

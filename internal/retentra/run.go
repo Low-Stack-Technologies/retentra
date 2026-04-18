@@ -11,15 +11,29 @@ import (
 )
 
 type Status struct {
-	Success     bool
-	ArchiveName string
-	ArchivePath string
-	Outputs     []string
-	Error       error
+	Success        bool
+	ReportTitle    string
+	ArchiveName    string
+	ArchivePath    string
+	SourceResults  []ReportResult
+	Included       []string
+	ArchiveCreated bool
+	ArchiveError   error
+	OutputResults  []ReportResult
+	Error          error
+}
+
+type ReportResult struct {
+	Label string
+	Error error
+}
+
+func (result ReportResult) Success() bool {
+	return result.Error == nil
 }
 
 func Run(ctx context.Context, configPath string, out io.Writer) error {
-	fmt.Fprintln(out, "loading config")
+	fmt.Fprintln(out, "Loading config")
 	cfg, err := LoadConfig(configPath)
 	if err != nil {
 		return err
@@ -34,11 +48,14 @@ func Run(ctx context.Context, configPath string, out io.Writer) error {
 	p := placeholders{tmpdir: tmpdir, now: time.Now()}
 	archiveName := p.expand(cfg.Archive.Name)
 	archivePath := filepath.Join(tmpdir, archiveName)
-	status := Status{ArchiveName: archiveName, ArchivePath: archivePath}
+	status := Status{ReportTitle: cfg.Report.Title, ArchiveName: archiveName, ArchivePath: archivePath}
 
 	runErr := runBackup(ctx, cfg, p, archivePath, archiveName, out, &status)
 	status.Success = runErr == nil
 	status.Error = runErr
+
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, statusMessage(status))
 
 	notifyErr := sendNotifications(ctx, cfg.Notifications, status)
 	if runErr != nil {
@@ -54,24 +71,29 @@ func Run(ctx context.Context, configPath string, out io.Writer) error {
 }
 
 func runBackup(ctx context.Context, cfg Config, p placeholders, archivePath, archiveName string, out io.Writer, status *Status) error {
-	fmt.Fprintln(out, "collecting sources")
-	items, err := collectSources(ctx, cfg.Sources, p)
+	fmt.Fprintln(out, "Collecting sources")
+	items, err := collectSources(ctx, cfg.Sources, p, status)
 	if err != nil {
 		return err
 	}
-
-	fmt.Fprintln(out, "creating archive")
-	if err := createArchive(archivePath, cfg.Archive, items); err != nil {
-		return err
+	for _, item := range items {
+		status.Included = append(status.Included, item.Target)
 	}
 
-	fmt.Fprintln(out, "delivering outputs")
+	fmt.Fprintln(out, "Creating archive")
+	if err := createArchive(archivePath, cfg.Archive, items); err != nil {
+		status.ArchiveError = err
+		return err
+	}
+	status.ArchiveCreated = true
+
+	fmt.Fprintln(out, "Delivering outputs")
 	for i, output := range cfg.Outputs {
-		desc, err := deliverOutput(output, archivePath, archiveName)
-		if err != nil {
+		if _, err := deliverOutput(output, archivePath, archiveName); err != nil {
+			status.OutputResults = append(status.OutputResults, ReportResult{Label: output.Label, Error: err})
 			return fmt.Errorf("outputs[%d]: %w", i, err)
 		}
-		status.Outputs = append(status.Outputs, desc)
+		status.OutputResults = append(status.OutputResults, ReportResult{Label: output.Label})
 	}
 	return nil
 }

@@ -1,9 +1,13 @@
 # Example configuration for:
 #   retentra config.yaml
 
+report:
+  title: App Backup Report
+
 sources:
   # Include an existing directory directly in the archive.
   - type: filesystem
+    label: Site files
     path: /srv/app/data
     target: app/data
 
@@ -14,7 +18,8 @@ sources:
       - mkdir -p "{tmpdir}/export"
       - sqlite3 /srv/app/app.db ".backup '{tmpdir}/export/app.db'"
     collect:
-      - path: "{tmpdir}/export/app.db"
+      - label: DB Dump: app
+        path: "{tmpdir}/export/app.db"
         target: app/app.db
 
 archive:
@@ -24,9 +29,11 @@ archive:
 
 outputs:
   - type: filesystem
+    label: Local copy
     path: /var/backups
 
   - type: sftp
+    label: Upload (backup.example.com)
     host: backup.example.com
     port: 22
     username: backup
@@ -38,6 +45,7 @@ outputs:
 #
 # outputs:
 #   - type: sftp
+#     label: Upload (backup.example.com)
 #     host: backup.example.com
 #     port: 22
 #     username: backup

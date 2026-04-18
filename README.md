@@ -82,8 +82,12 @@ commands, archive settings, outputs, and notifications for your environment.
 See [CONFIGURATION.md](CONFIGURATION.md) for the full configuration reference.
 
 ```yaml
+report:
+  title: App Backup Report
+
 sources:
   - type: filesystem
+    label: Site files
     path: /srv/app/data
     target: app/data
 
@@ -94,5 +98,6 @@ archive:
 
 outputs:
   - type: filesystem
+    label: Local copy
     path: /var/backups
 ```

@@ -12,8 +12,12 @@ archive, and which status notifications to send.
 ## Top-Level Structure
 
 ```yaml
+report:
+  title: App Backup Report
+
 sources:
   - type: filesystem
+    label: Site files
     path: /srv/app/data
     target: app/data
 
@@ -24,6 +28,7 @@ archive:
 
 outputs:
   - type: filesystem
+    label: Local copy
     path: /var/backups
 
 notifications:
@@ -33,6 +38,7 @@ notifications:
 
 Required top-level sections:
 
+- `report`: display title for stdout and notification reports.
 - `sources`: one or more backup inputs.
 - `archive`: archive filename, format, and compression settings.
 - `outputs`: one or more archive delivery targets.
@@ -80,6 +86,7 @@ directory.
 ```yaml
 sources:
   - type: filesystem
+    label: Site files
     path: /srv/app/data
     target: app/data
 ```
@@ -87,6 +94,7 @@ sources:
 Fields:
 
 - `type`: must be `filesystem`.
+- `label`: required display label for stdout and notification reports.
 - `path`: required file or directory path to include in the archive.
 - `target`: required path where the file or directory should be placed inside
   the archive.
@@ -113,7 +121,8 @@ sources:
       - mkdir -p "{tmpdir}/export"
       - sqlite3 /srv/app/app.db ".backup '{tmpdir}/export/app.db'"
     collect:
-      - path: "{tmpdir}/export/app.db"
+      - label: DB Dump: app
+        path: "{tmpdir}/export/app.db"
         target: app/app.db
 ```
 
@@ -124,6 +133,7 @@ Fields:
 - `commands`: required non-empty list of shell commands.
 - `collect`: required non-empty list of generated files or directories to add
   to the archive.
+- `collect[].label`: required display label for stdout and notification reports.
 - `collect[].path`: required generated file or directory path.
 - `collect[].target`: required archive-internal target path.
 
@@ -197,12 +207,14 @@ Use filesystem output to copy the archive to a local directory.
 ```yaml
 outputs:
   - type: filesystem
+    label: Local copy
     path: /var/backups
 ```
 
 Fields:
 
 - `type`: must be `filesystem`.
+- `label`: required display label for stdout and notification reports.
 - `path`: required local directory where the archive should be copied.
 
 The output directory is created if it does not exist. The archive filename is the
@@ -215,6 +227,7 @@ Use SFTP output to upload the archive to a remote server.
 ```yaml
 outputs:
   - type: sftp
+    label: Upload (backup.example.com)
     host: backup.example.com
     port: 22
     username: backup
@@ -226,6 +239,7 @@ outputs:
 Fields:
 
 - `type`: must be `sftp`.
+- `label`: required display label for stdout and notification reports.
 - `host`: required SFTP server hostname.
 - `port`: optional SFTP server port. Defaults to `22`.
 - `username`: required remote username.
@@ -252,6 +266,7 @@ environments.
 ```yaml
 outputs:
   - type: sftp
+    label: Upload (backup.example.com)
     host: backup.example.com
     username: backup
     remote_path: /backups
@@ -329,8 +344,12 @@ notifications:
 ### Minimal Filesystem Backup
 
 ```yaml
+report:
+  title: App Backup Report
+
 sources:
   - type: filesystem
+    label: Site files
     path: /srv/app/data
     target: app/data
 
@@ -341,12 +360,16 @@ archive:
 
 outputs:
   - type: filesystem
+    label: Local copy
     path: /var/backups
 ```
 
 ### Command-Generated Database Backup
 
 ```yaml
+report:
+  title: Database Backup Report
+
 sources:
   - type: command
     workdir: "{tmpdir}"
@@ -354,7 +377,8 @@ sources:
       - mkdir -p "{tmpdir}/export"
       - sqlite3 /srv/app/app.db ".backup '{tmpdir}/export/app.db'"
     collect:
-      - path: "{tmpdir}/export/app.db"
+      - label: DB Dump: app
+        path: "{tmpdir}/export/app.db"
         target: app/app.db
 
 archive:
@@ -364,14 +388,19 @@ archive:
 
 outputs:
   - type: filesystem
+    label: Local copy
     path: /var/backups
 ```
 
 ### Multiple Outputs With Notifications
 
 ```yaml
+report:
+  title: App Backup Report
+
 sources:
   - type: filesystem
+    label: Site files
     path: /srv/app/data
     target: app/data
 
@@ -382,9 +411,11 @@ archive:
 
 outputs:
   - type: filesystem
+    label: Local copy
     path: /var/backups
 
   - type: sftp
+    label: Upload (backup.example.com)
     host: backup.example.com
     username: backup
     remote_path: /backups
@@ -405,8 +436,10 @@ notifications:
 
 Common validation failures:
 
+- `report.title` is empty.
 - `sources` is empty.
 - `outputs` is empty.
+- A source, collected artifact, or output is missing a required `label`.
 - A source, output, or notification has an unsupported `type`.
 - A required field is missing.
 - An archive target is absolute, `.`, or contains `..`.
