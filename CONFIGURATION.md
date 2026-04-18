@@ -1,13 +1,17 @@
 # Configuration
 
-`retentra` reads one YAML configuration file:
+`retentra` reads one or more YAML configuration files:
 
 ```sh
-retentra config.yaml
+retentra config.yaml [config2.yaml ...]
+retentra *-retentra.yaml
+retentra --no-parallel *-retentra.yaml
 ```
 
-The file describes what to collect, how to archive it, where to deliver the
-archive, and which status notifications to send.
+Each file describes what to collect, how to archive it, where to deliver the
+archive, and which status notifications to send. Multiple configs run in
+parallel by default and independently from each other. Use `--no-parallel` to
+run configs sequentially.
 
 ## Top-Level Structure
 

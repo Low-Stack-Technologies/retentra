@@ -1,10 +1,10 @@
 # retentra
 
-`retentra` is a small backup archiving tool intended to run from a YAML
-configuration file:
+`retentra` is a small backup archiving tool intended to run from one or more
+YAML configuration files:
 
 ```sh
-retentra config.yaml
+retentra config.yaml [config2.yaml ...]
 ```
 
 The configuration describes where backup contents come from, how the archive is
@@ -41,6 +41,7 @@ Run the CLI directly during development:
 
 ```sh
 go run ./cmd/retentra config.yaml
+go run ./cmd/retentra *-retentra.yaml
 ```
 
 Show the help menu:
@@ -55,6 +56,7 @@ Build a local binary:
 ```sh
 make build
 ./bin/retentra config.yaml
+./bin/retentra --no-parallel *-retentra.yaml
 ```
 
 Run tests:
@@ -68,6 +70,10 @@ The integration test starts a temporary Docker SFTP server and is not included
 in the default test target.
 
 ## Backup Flow
+
+When multiple configs are provided, `retentra` runs them in parallel by default.
+Use `--no-parallel` to run them sequentially. Output is prefixed with the config
+path so concurrent runs can be distinguished.
 
 `retentra` is designed around three steps:
 
