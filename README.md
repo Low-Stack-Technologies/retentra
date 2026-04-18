@@ -12,15 +12,16 @@ named and encoded, and where the finished archive should be written or uploaded.
 
 ## Install
 
-Install the latest Linux amd64 release:
+Install the latest Linux amd64 or arm64 release:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Low-Stack-Technologies/retentra/main/install.sh | bash
 ```
 
 The installer resolves the newest published release asset through the GitHub
-Releases API and downloads `retentra-linux-amd64`. The release workflow attaches
-that asset after a release is published.
+Releases API and downloads the asset matching your machine:
+`retentra-linux-amd64` or `retentra-linux-arm64`. The release workflow attaches
+those assets after a release is published.
 
 The installer writes `retentra` to `$HOME/.local/bin` by default. To choose a
 different directory:

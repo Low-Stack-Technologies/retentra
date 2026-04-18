@@ -13,9 +13,17 @@ permissions:
   contents: write
 
 jobs:
-  linux-amd64:
-    name: Build Linux amd64
+  linux:
+    name: Build Linux ${{ matrix.arch }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            asset: retentra-linux-amd64
+          - arch: arm64
+            asset: retentra-linux-arm64
 
     steps:
       - name: Check out repository
@@ -30,15 +38,19 @@ jobs:
         run: go test ./...
 
       - name: Build executable
+        env:
+          GOARCH: ${{ matrix.arch }}
+          ASSET: ${{ matrix.asset }}
         run: |
           mkdir -p dist
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o dist/retentra-linux-amd64 ./cmd/retentra
+          CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH" go build -o "dist/$ASSET" ./cmd/retentra
 
       - name: Upload release asset
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           INPUT_TAG: ${{ inputs.tag }}
+          ASSET: ${{ matrix.asset }}
         run: |
           tag="${RELEASE_TAG:-$INPUT_TAG}"
-          gh release upload "$tag" dist/retentra-linux-amd64 --clobber
+          gh release upload "$tag" "dist/$ASSET" --clobber

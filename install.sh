@@ -2,7 +2,6 @@
 set -euo pipefail
 
 repo="Low-Stack-Technologies/retentra"
-asset="retentra-linux-amd64"
 install_dir="${INSTALL_DIR:-$HOME/.local/bin}"
 binary_path="$install_dir/retentra"
 api_url="https://api.github.com/repos/$repo/releases/latest"
@@ -18,9 +17,13 @@ fi
 
 case "$arch" in
   x86_64 | amd64)
+    asset="retentra-linux-amd64"
+    ;;
+  aarch64 | arm64)
+    asset="retentra-linux-arm64"
     ;;
   *)
-    echo "retentra installer currently supports amd64 only; detected $arch" >&2
+    echo "retentra installer currently supports amd64 and arm64 only; detected $arch" >&2
     exit 1
     ;;
 esac
