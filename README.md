@@ -42,6 +42,13 @@ Run the CLI directly during development:
 go run ./cmd/retentra config.yaml
 ```
 
+Show the help menu:
+
+```sh
+retentra --help
+retentra -h
+```
+
 Build a local binary:
 
 ```sh
