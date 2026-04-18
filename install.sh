@@ -5,7 +5,8 @@ repo="Low-Stack-Technologies/retentra"
 asset="retentra-linux-amd64"
 install_dir="${INSTALL_DIR:-$HOME/.local/bin}"
 binary_path="$install_dir/retentra"
-download_url="https://github.com/$repo/releases/latest/download/$asset"
+api_url="https://api.github.com/repos/$repo/releases/latest"
+releases_api_url="https://api.github.com/repos/$repo/releases"
 
 os="$(uname -s)"
 arch="$(uname -m)"
@@ -29,37 +30,81 @@ trap 'rm -rf "$tmpdir"' EXIT
 
 mkdir -p "$install_dir"
 
+fetch_url() {
+  local url="$1"
+  local output="$2"
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$url" -o "$output"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$output" "$url"
+  else
+    echo "curl or wget is required to install retentra" >&2
+    exit 1
+  fi
+}
+
+echo "Resolving latest retentra release from $api_url"
+if ! fetch_url "$api_url" "$tmpdir/release.json"; then
+  echo "GitHub latest release endpoint was unavailable; checking published releases list." >&2
+  if ! fetch_url "$releases_api_url" "$tmpdir/release.json"; then
+    cat >&2 <<EOF
+Failed to fetch release metadata.
+
+Expected API endpoints:
+  $api_url
+  $releases_api_url
+
+Make sure $repo has a published, non-draft GitHub Release.
+EOF
+    exit 1
+  fi
+fi
+
+download_url="$(
+  awk -v asset="$asset" '
+    /"name":[[:space:]]*"/ {
+      in_asset = ($0 ~ "\"name\":[[:space:]]*\"" asset "\"")
+    }
+    in_asset && /"browser_download_url":[[:space:]]*"/ {
+      url = $0
+      sub(/^.*"browser_download_url":[[:space:]]*"/, "", url)
+      sub(/".*$/, "", url)
+      print url
+      exit
+    }
+  ' "$tmpdir/release.json"
+)"
+
+if [[ -z "$download_url" ]]; then
+  cat >&2 <<EOF
+Failed to find release asset.
+
+Expected asset name:
+  $asset
+
+Latest release API endpoint:
+  $api_url
+
+Releases list API endpoint:
+  $releases_api_url
+
+At least one published, non-draft release must include an asset named $asset.
+EOF
+  exit 1
+fi
+
 echo "Downloading retentra from $download_url"
-if command -v curl >/dev/null 2>&1; then
-  if ! curl -fsSL "$download_url" -o "$tmpdir/retentra"; then
-    cat >&2 <<EOF
+if ! fetch_url "$download_url" "$tmpdir/retentra"; then
+  cat >&2 <<EOF
 Failed to download retentra.
 
-Expected release asset:
+Resolved release asset:
   $download_url
 
-Publish a GitHub Release for $repo and wait for the release workflow to attach
-the $asset asset. If the release already exists, rerun the release workflow for
-that tag.
+Latest release API endpoint:
+  $api_url
 EOF
-    exit 1
-  fi
-elif command -v wget >/dev/null 2>&1; then
-  if ! wget -qO "$tmpdir/retentra" "$download_url"; then
-    cat >&2 <<EOF
-Failed to download retentra.
-
-Expected release asset:
-  $download_url
-
-Publish a GitHub Release for $repo and wait for the release workflow to attach
-the $asset asset. If the release already exists, rerun the release workflow for
-that tag.
-EOF
-    exit 1
-  fi
-else
-  echo "curl or wget is required to install retentra" >&2
   exit 1
 fi
 
