@@ -100,7 +100,8 @@ func runBackup(ctx context.Context, cfg Config, p placeholders, archivePath, arc
 		}
 		if err := applyOutputRetention(output, cfg.Archive.Name); err != nil {
 			status.OutputResults = append(status.OutputResults, ReportResult{Label: output.Label, Error: err})
-			return fmt.Errorf("outputs[%d].retention: %w", i, err)
+			outputErrs = append(outputErrs, fmt.Errorf("outputs[%d].retention: %w", i, err))
+			continue
 		}
 		status.OutputResults = append(status.OutputResults, ReportResult{Label: output.Label})
 	}

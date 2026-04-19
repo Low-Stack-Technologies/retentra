@@ -5,8 +5,10 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRunRejectsExpandedArchiveNamePath(t *testing.T) {
@@ -79,6 +81,61 @@ func TestRunBackupAttemptsLaterOutputsAfterFailure(t *testing.T) {
 		t.Fatalf("second output result = %#v, want success", status.OutputResults[1])
 	}
 	if _, err := os.Stat(filepath.Join(successOutput, "backup.tar")); err != nil {
+		t.Fatalf("successful output was not delivered: %v", err)
+	}
+}
+
+func TestRunBackupAttemptsLaterOutputsAfterRetentionFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod permissions are Unix-specific")
+	}
+
+	dir := t.TempDir()
+	source := filepath.Join(dir, "source.txt")
+	if err := os.WriteFile(source, []byte("backup data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	retentionOutput := filepath.Join(dir, "retention-output")
+	if err := os.Mkdir(retentionOutput, 0o333); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(retentionOutput, 0o755)
+
+	successOutput := filepath.Join(dir, "successful-output")
+	cfg := Config{
+		Report:  ReportConfig{Title: "Backup Report"},
+		Sources: []SourceConfig{{Type: "filesystem", Label: "Source", Path: source, Target: "source.txt"}},
+		Archive: ArchiveConfig{Name: "backup-{date}.tar", Format: "tar", Compression: "none"},
+		Outputs: []OutputConfig{
+			{Type: "filesystem", Label: "Retention fails", Path: retentionOutput, Retention: RetentionConfig{KeepLast: 1}},
+			{Type: "filesystem", Label: "Successful output", Path: successOutput},
+		},
+	}
+	status := Status{}
+	archivePath := filepath.Join(dir, "backup-2026-04-19.tar")
+
+	err := runBackup(
+		context.Background(),
+		cfg,
+		placeholders{now: time.Date(2026, 4, 19, 0, 0, 0, 0, time.UTC)},
+		archivePath,
+		"backup-2026-04-19.tar",
+		&bytes.Buffer{},
+		&status,
+	)
+	if err == nil {
+		t.Fatal("runBackup() error = nil, want retention failure")
+	}
+	if len(status.OutputResults) != 2 {
+		t.Fatalf("OutputResults = %#v, want both outputs recorded", status.OutputResults)
+	}
+	if status.OutputResults[0].Success() {
+		t.Fatalf("first output result = %#v, want retention failure", status.OutputResults[0])
+	}
+	if !status.OutputResults[1].Success() {
+		t.Fatalf("second output result = %#v, want success", status.OutputResults[1])
+	}
+	if _, err := os.Stat(filepath.Join(successOutput, "backup-2026-04-19.tar")); err != nil {
 		t.Fatalf("successful output was not delivered: %v", err)
 	}
 }
