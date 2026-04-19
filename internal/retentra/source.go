@@ -3,6 +3,7 @@ package retentra
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 )
@@ -59,9 +60,10 @@ func runCommandSource(ctx context.Context, source SourceConfig, p placeholders) 
 		expanded := p.expand(command)
 		cmd := exec.CommandContext(ctx, "/bin/sh", "-c", expanded)
 		cmd.Dir = workdir
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("commands[%d] failed: %w: %s", i, err, string(output))
+		cmd.Stdout = io.Discard
+		cmd.Stderr = io.Discard
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("commands[%d] failed: %w", i, err)
 		}
 	}
 	return nil

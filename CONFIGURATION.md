@@ -151,7 +151,8 @@ If any command exits non-zero, the command source fails and later commands are
 not run.
 
 `retentra` creates `workdir` when it does not already exist. Command output is
-captured and included in the error message when a command fails.
+discarded and is not included in error messages or notifications, because backup
+commands may print secrets on failure.
 
 Command sources should write generated backup content into `{tmpdir}` or another
 dedicated output path, then list only the generated backup artifacts in
