@@ -44,6 +44,7 @@ jobs:
         run: |
           mkdir -p dist
           CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH" go build -o "dist/$ASSET" ./cmd/retentra
+          sha256sum "dist/$ASSET" > "dist/$ASSET.sha256"
 
       - name: Upload release asset
         env:
@@ -54,3 +55,4 @@ jobs:
         run: |
           tag="${RELEASE_TAG:-$INPUT_TAG}"
           gh release upload "$tag" "dist/$ASSET" --clobber
+          gh release upload "$tag" "dist/$ASSET.sha256" --clobber
