@@ -14,6 +14,9 @@ import (
 const (
 	discordSuccessColor = 5763719
 	discordFailureColor = 15548997
+	maxReportItems      = 20
+	maxReportLineRunes  = 240
+	maxReportValueRunes = 1000
 )
 
 type discordPayload struct {
@@ -61,8 +64,8 @@ func statusMessage(status Status) string {
 	}
 	b.WriteString(title)
 
-	for _, result := range status.SourceResults {
-		writeSourceResult(&b, result)
+	for _, line := range sourceResultLines(status.SourceResults) {
+		writeLine(&b, line)
 	}
 
 	if status.ArchiveCreated {
@@ -72,11 +75,11 @@ func statusMessage(status Status) string {
 	}
 
 	if len(status.Included) > 0 {
-		writeLine(&b, fmt.Sprintf("📁 Included: %s", strings.Join(status.Included, ", ")))
+		writeLine(&b, fmt.Sprintf("📁 Included: %s", includedValue(status.Included)))
 	}
 
-	for _, result := range status.OutputResults {
-		writeOutputResult(&b, result)
+	for _, line := range outputResultLines(status.OutputResults) {
+		writeLine(&b, line)
 	}
 
 	if !status.Success && !reportHasFailure(status) && status.Error != nil {
@@ -103,20 +106,18 @@ func reportHasFailure(status Status) bool {
 	return false
 }
 
-func writeSourceResult(b *strings.Builder, result ReportResult) {
+func sourceResultLine(result ReportResult) string {
 	if result.Success() {
-		writeLine(b, fmt.Sprintf("✅ %s", result.Label))
-		return
+		return fmt.Sprintf("✅ %s", result.Label)
 	}
-	writeLine(b, fmt.Sprintf("❌ %s: %s", result.Label, result.Error))
+	return fmt.Sprintf("❌ %s: %s", result.Label, result.Error)
 }
 
-func writeOutputResult(b *strings.Builder, result ReportResult) {
+func outputResultLine(result ReportResult) string {
 	if result.Success() {
-		writeLine(b, fmt.Sprintf("🚀 %s: Success", result.Label))
-		return
+		return fmt.Sprintf("🚀 %s: Success", result.Label)
 	}
-	writeLine(b, fmt.Sprintf("❌ %s: %s", result.Label, result.Error))
+	return fmt.Sprintf("❌ %s: %s", result.Label, result.Error)
 }
 
 func writeLine(b *strings.Builder, line string) {
@@ -155,7 +156,7 @@ func discordFields(status Status) []discordEmbedField {
 		fields = append(fields, discordEmbedField{Name: "Archive", Value: fmt.Sprintf("❌ %s", status.ArchiveError), Inline: true})
 	}
 	if len(status.Included) > 0 {
-		fields = append(fields, discordEmbedField{Name: "Included", Value: strings.Join(status.Included, ", ")})
+		fields = append(fields, discordEmbedField{Name: "Included", Value: includedValue(status.Included)})
 	}
 	if len(status.OutputResults) > 0 {
 		fields = append(fields, discordEmbedField{Name: "Outputs", Value: outputResultsValue(status.OutputResults), Inline: true})
@@ -167,27 +168,56 @@ func discordFields(status Status) []discordEmbedField {
 }
 
 func sourceResultsValue(results []ReportResult) string {
-	lines := make([]string, 0, len(results))
-	for _, result := range results {
-		if result.Success() {
-			lines = append(lines, fmt.Sprintf("✅ %s", result.Label))
-			continue
-		}
-		lines = append(lines, fmt.Sprintf("❌ %s: %s", result.Label, result.Error))
-	}
-	return strings.Join(lines, "\n")
+	return strings.Join(sourceResultLines(results), "\n")
 }
 
 func outputResultsValue(results []ReportResult) string {
-	lines := make([]string, 0, len(results))
-	for _, result := range results {
-		if result.Success() {
-			lines = append(lines, fmt.Sprintf("🚀 %s: Success", result.Label))
-			continue
-		}
-		lines = append(lines, fmt.Sprintf("❌ %s: %s", result.Label, result.Error))
+	return strings.Join(outputResultLines(results), "\n")
+}
+
+func sourceResultLines(results []ReportResult) []string {
+	return limitedLines(len(results), func(i int) string {
+		return truncateRunes(sourceResultLine(results[i]), maxReportLineRunes)
+	})
+}
+
+func outputResultLines(results []ReportResult) []string {
+	return limitedLines(len(results), func(i int) string {
+		return truncateRunes(outputResultLine(results[i]), maxReportLineRunes)
+	})
+}
+
+func includedValue(included []string) string {
+	lines := limitedLines(len(included), func(i int) string {
+		return truncateRunes(included[i], maxReportLineRunes)
+	})
+	return truncateRunes(strings.Join(lines, ", "), maxReportValueRunes)
+}
+
+func limitedLines(total int, line func(int) string) []string {
+	limit := total
+	if limit > maxReportItems {
+		limit = maxReportItems
 	}
-	return strings.Join(lines, "\n")
+	lines := make([]string, 0, limit+1)
+	for i := 0; i < limit; i++ {
+		lines = append(lines, line(i))
+	}
+	if total > limit {
+		lines = append(lines, fmt.Sprintf("... and %d more", total-limit))
+	}
+	return lines
+}
+
+func truncateRunes(value string, maxRunes int) string {
+	runes := []rune(value)
+	if len(runes) <= maxRunes {
+		return value
+	}
+	if maxRunes <= 3 {
+		return string(runes[:maxRunes])
+	}
+	return string(runes[:maxRunes-3]) + "..."
 }
 
 func sendDiscord(ctx context.Context, webhookURL string, status Status) error {
