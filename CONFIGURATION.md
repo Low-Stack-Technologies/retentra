@@ -321,7 +321,8 @@ Fields:
 - `type`: must be `discord`.
 - `webhook_url`: required Discord webhook URL.
 
-Discord notifications send a JSON body with a `content` field.
+Discord notifications send an embed-only JSON payload with status fields for
+sources, archive creation, included targets, outputs, and unattributed errors.
 
 ### NTFY Notification
 
