@@ -20,8 +20,14 @@ curl -fsSL https://raw.githubusercontent.com/Low-Stack-Technologies/retentra/mai
 
 The installer resolves the newest published release asset through the GitHub
 Releases API and downloads the asset matching your machine:
-`retentra-linux-amd64` or `retentra-linux-arm64`. The release workflow attaches
-those assets after a release is published.
+`retentra-linux-amd64` or `retentra-linux-arm64`. It also downloads the matching
+`.sha256` asset and verifies the binary before installing it. Published releases
+must include these assets:
+
+- `retentra-linux-amd64`
+- `retentra-linux-amd64.sha256`
+- `retentra-linux-arm64`
+- `retentra-linux-arm64.sha256`
 
 The installer writes `retentra` to `$HOME/.local/bin` by default. To choose a
 different directory:
@@ -49,6 +55,13 @@ Show the help menu:
 ```sh
 retentra --help
 retentra -h
+```
+
+Validate one or more configuration files without running backups:
+
+```sh
+retentra validate config.yaml
+retentra validate *-retentra.yaml
 ```
 
 Build a local binary:

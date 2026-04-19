@@ -13,12 +13,14 @@ import (
 )
 
 var runConfig = retentra.Run
+var loadConfig = retentra.LoadConfig
 
 func main() {
 	os.Exit(runCLI(os.Args[1:], os.Stdout, os.Stderr))
 }
 
 type cliOptions struct {
+	validate    bool
 	parallel    bool
 	configPaths []string
 }
@@ -35,6 +37,13 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
+	if opts.validate {
+		if !validateConfigs(opts.configPaths, stdout, stderr) {
+			return 1
+		}
+		return 0
+	}
+
 	if !runConfigs(opts, stdout, stderr) {
 		return 1
 	}
@@ -42,6 +51,10 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 }
 
 func parseCLI(args []string) (cliOptions, bool, error) {
+	if len(args) > 0 && args[0] == "validate" {
+		return parseValidateCLI(args[1:])
+	}
+
 	var noParallel bool
 	var help bool
 	var configArgs []string
@@ -69,6 +82,33 @@ func parseCLI(args []string) (cliOptions, bool, error) {
 		return cliOptions{}, false, fmt.Errorf("usage: retentra [--no-parallel] config.yaml [config2.yaml ...]")
 	}
 	return cliOptions{parallel: !noParallel, configPaths: configPaths}, false, nil
+}
+
+func parseValidateCLI(args []string) (cliOptions, bool, error) {
+	var help bool
+	var configArgs []string
+	for _, arg := range args {
+		switch arg {
+		case "--help", "-h":
+			help = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return cliOptions{}, false, fmt.Errorf("unknown flag %q", arg)
+			}
+			configArgs = append(configArgs, arg)
+		}
+	}
+	if help {
+		return cliOptions{}, true, nil
+	}
+	configPaths, err := expandConfigArgs(configArgs)
+	if err != nil {
+		return cliOptions{}, false, err
+	}
+	if len(configPaths) == 0 {
+		return cliOptions{}, false, fmt.Errorf("usage: retentra validate config.yaml [config2.yaml ...]")
+	}
+	return cliOptions{validate: true, configPaths: configPaths}, false, nil
 }
 
 func expandConfigArgs(args []string) ([]string, error) {
@@ -104,6 +144,20 @@ func expandConfigArgs(args []string) ([]string, error) {
 
 func hasGlobMeta(path string) bool {
 	return strings.ContainsAny(path, "*?[")
+}
+
+func validateConfigs(configPaths []string, stdout, stderr io.Writer) bool {
+	var mu sync.Mutex
+	ok := true
+	for _, configPath := range configPaths {
+		if _, err := loadConfig(configPath); err != nil {
+			writeRunError(stderr, &mu, configPath, err)
+			ok = false
+			continue
+		}
+		fmt.Fprintln(newPrefixWriter(stdout, configPath, &mu), "Config is valid")
+	}
+	return ok
 }
 
 func runConfigs(opts cliOptions, stdout, stderr io.Writer) bool {
@@ -189,6 +243,7 @@ func printHelp(out io.Writer) {
 
 Usage:
   retentra [--no-parallel] config.yaml [config2.yaml ...]
+  retentra validate config.yaml [config2.yaml ...]
 
 Arguments:
   config.yaml    Path or glob pattern for a retentra YAML configuration file.
@@ -203,5 +258,6 @@ Examples:
   retentra *-retentra.yaml
   retentra --no-parallel *-retentra.yaml
   retentra /etc/retentra/nightly.yaml
+  retentra validate /etc/retentra/nightly.yaml
 `)
 }
