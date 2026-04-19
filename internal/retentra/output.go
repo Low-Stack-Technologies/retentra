@@ -1,6 +1,7 @@
 package retentra
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -74,6 +75,56 @@ func copyFile(source, destination string) error {
 }
 
 func uploadSFTP(output OutputConfig, archivePath, archiveName string) error {
+	return withSFTPClient(output, func(client *sftp.Client) error {
+		if err := client.MkdirAll(output.RemotePath); err != nil {
+			return err
+		}
+		remotePath := filepath.ToSlash(filepath.Join(output.RemotePath, archiveName))
+		tempRemotePath := filepath.ToSlash(filepath.Join(output.RemotePath, fmt.Sprintf(".%s.tmp-%d", archiveName, time.Now().UnixNano())))
+		remoteFile, err := client.Create(tempRemotePath)
+		if err != nil {
+			return err
+		}
+		cleanupRemote := true
+		defer func() {
+			if cleanupRemote {
+				_ = client.Remove(tempRemotePath)
+			}
+		}()
+
+		localFile, err := os.Open(archivePath)
+		if err != nil {
+			_ = remoteFile.Close()
+			return err
+		}
+		defer localFile.Close()
+		if _, err := io.Copy(remoteFile, localFile); err != nil {
+			_ = remoteFile.Close()
+			return err
+		}
+		if err := remoteFile.Close(); err != nil {
+			return err
+		}
+		if err := renameSFTPFile(client, tempRemotePath, remotePath); err != nil {
+			return err
+		}
+		cleanupRemote = false
+		return nil
+	})
+}
+
+func renameSFTPFile(client *sftp.Client, tempRemotePath, remotePath string) error {
+	if err := client.PosixRename(tempRemotePath, remotePath); err != nil {
+		var statusErr *sftp.StatusError
+		if errors.As(err, &statusErr) && statusErr.FxCode() == sftp.ErrSSHFxOpUnsupported {
+			return client.Rename(tempRemotePath, remotePath)
+		}
+		return err
+	}
+	return nil
+}
+
+func withSFTPClient(output OutputConfig, use func(*sftp.Client) error) error {
 	auth, err := sftpAuth(output)
 	if err != nil {
 		return err
@@ -100,41 +151,7 @@ func uploadSFTP(output OutputConfig, archivePath, archiveName string) error {
 		return err
 	}
 	defer client.Close()
-
-	if err := client.MkdirAll(output.RemotePath); err != nil {
-		return err
-	}
-	remotePath := filepath.ToSlash(filepath.Join(output.RemotePath, archiveName))
-	tempRemotePath := filepath.ToSlash(filepath.Join(output.RemotePath, fmt.Sprintf(".%s.tmp-%d", archiveName, time.Now().UnixNano())))
-	remoteFile, err := client.Create(tempRemotePath)
-	if err != nil {
-		return err
-	}
-	cleanupRemote := true
-	defer func() {
-		if cleanupRemote {
-			_ = client.Remove(tempRemotePath)
-		}
-	}()
-
-	localFile, err := os.Open(archivePath)
-	if err != nil {
-		_ = remoteFile.Close()
-		return err
-	}
-	defer localFile.Close()
-	if _, err := io.Copy(remoteFile, localFile); err != nil {
-		_ = remoteFile.Close()
-		return err
-	}
-	if err := remoteFile.Close(); err != nil {
-		return err
-	}
-	if err := client.Rename(tempRemotePath, remotePath); err != nil {
-		return err
-	}
-	cleanupRemote = false
-	return nil
+	return use(client)
 }
 
 func sftpAuth(output OutputConfig) (ssh.AuthMethod, error) {

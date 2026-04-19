@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"retentra/internal/retentra"
 )
 
 func TestRunCLIHelpLong(t *testing.T) {
@@ -154,6 +156,67 @@ func TestRunCLIRejectsDuplicateConfigPath(t *testing.T) {
 	}
 }
 
+func TestRunCLIValidateLoadsConfigsWithoutRunningBackups(t *testing.T) {
+	restoreRun := stubRunConfig(t, func(_ context.Context, _ string, _ io.Writer) error {
+		t.Fatal("runConfig should not be called by validate")
+		return nil
+	})
+	defer restoreRun()
+	restoreLoad := stubLoadConfig(t, func(configPath string) (retentra.Config, error) {
+		if configPath != "config.yaml" {
+			t.Fatalf("configPath = %q, want config.yaml", configPath)
+		}
+		return retentra.Config{}, nil
+	})
+	defer restoreLoad()
+	var stdout, stderr bytes.Buffer
+
+	code := runCLI([]string{"validate", "config.yaml"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0", code)
+	}
+	if !strings.Contains(stdout.String(), "[config.yaml] Config is valid") {
+		t.Fatalf("stdout = %q, want validation success", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestRunCLIValidateReportsConfigErrors(t *testing.T) {
+	restoreLoad := stubLoadConfig(t, func(_ string) (retentra.Config, error) {
+		return retentra.Config{}, errors.New("invalid config")
+	})
+	defer restoreLoad()
+	var stdout, stderr bytes.Buffer
+
+	code := runCLI([]string{"validate", "bad.yaml"}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "[bad.yaml] retentra: invalid config") {
+		t.Fatalf("stderr = %q, want validation error", stderr.String())
+	}
+}
+
+func TestRunCLIValidateRequiresConfig(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	code := runCLI([]string{"validate"}, &stdout, &stderr)
+
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "usage: retentra validate config.yaml [config2.yaml ...]") {
+		t.Fatalf("stderr = %q, want validate usage", stderr.String())
+	}
+}
+
 func TestRunCLINoParallelRunsInOrder(t *testing.T) {
 	var mu sync.Mutex
 	var order []string
@@ -266,6 +329,15 @@ func stubRunConfig(t *testing.T, fn func(context.Context, string, io.Writer) err
 	runConfig = fn
 	return func() {
 		runConfig = previous
+	}
+}
+
+func stubLoadConfig(t *testing.T, fn func(string) (retentra.Config, error)) func() {
+	t.Helper()
+	previous := loadConfig
+	loadConfig = fn
+	return func() {
+		loadConfig = previous
 	}
 }
 
