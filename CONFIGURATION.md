@@ -6,12 +6,17 @@
 retentra config.yaml [config2.yaml ...]
 retentra *-retentra.yaml
 retentra --no-parallel *-retentra.yaml
+retentra validate config.yaml [config2.yaml ...]
 ```
 
 Each file describes what to collect, how to archive it, where to deliver the
 archive, and which status notifications to send. Multiple configs run in
 parallel by default and independently from each other. Use `--no-parallel` to
 run configs sequentially.
+
+Use `retentra validate ...` to load and validate configuration files without
+running commands, creating archives, delivering outputs, or sending
+notifications.
 
 ## Top-Level Structure
 

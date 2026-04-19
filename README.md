@@ -51,6 +51,13 @@ retentra --help
 retentra -h
 ```
 
+Validate one or more configuration files without running backups:
+
+```sh
+retentra validate config.yaml
+retentra validate *-retentra.yaml
+```
+
 Build a local binary:
 
 ```sh
