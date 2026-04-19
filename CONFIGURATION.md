@@ -62,7 +62,8 @@ Optional top-level sections:
 
 Supported placeholder locations:
 
-- `archive.name`
+- `archive.name` (`{date}` only; `{tmpdir}` is not valid here because archive
+  names must render to a single filename)
 - Filesystem source `path`
 - Command source `workdir`
 - Command source `commands`
@@ -173,7 +174,8 @@ archive:
 
 Fields:
 
-- `name`: required archive filename template.
+- `name`: required archive filename template. It must render to a single
+  filename, not a path, so `/`, `\`, `.`, and `..` are rejected.
 - `format`: required archive container format.
 - `compression`: optional compression algorithm. Defaults to `none`.
 

@@ -119,6 +119,8 @@ func (cfg Config) Validate() error {
 
 	if cfg.Archive.Name == "" {
 		errs = append(errs, errors.New("archive.name is required"))
+	} else if err := validateArchiveName(cfg.Archive.Name); err != nil {
+		errs = append(errs, fmt.Errorf("archive.name: %w", err))
 	}
 	switch cfg.Archive.Format {
 	case "tar":
@@ -189,6 +191,13 @@ func validateSource(i int, source SourceConfig) []error {
 		errs = append(errs, fmt.Errorf("%s.type %q is unsupported", prefix, source.Type))
 	}
 	return errs
+}
+
+func validateArchiveName(name string) error {
+	if name == "." || name == ".." || strings.Contains(name, "/") || strings.Contains(name, "\\") {
+		return fmt.Errorf("%q must be a filename without path separators", name)
+	}
+	return nil
 }
 
 func validateArchiveTarget(target string) error {

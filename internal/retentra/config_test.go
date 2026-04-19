@@ -30,6 +30,19 @@ func TestConfigValidateRejectsUnsupportedArchive(t *testing.T) {
 	}
 }
 
+func TestConfigValidateRejectsArchiveNamePath(t *testing.T) {
+	for _, name := range []string{"../backup.tar.gz", "nested/backup.tar.gz", `nested\backup.tar.gz`, ".", ".."} {
+		t.Run(name, func(t *testing.T) {
+			cfg := validConfig()
+			cfg.Archive.Name = name
+
+			if err := cfg.Validate(); err == nil {
+				t.Fatal("Validate() error = nil, want unsafe archive name error")
+			}
+		})
+	}
+}
+
 func TestConfigValidateRejectsAmbiguousSFTPAuth(t *testing.T) {
 	cfg := validConfig()
 	cfg.Outputs = []OutputConfig{{Type: "sftp", Label: "Upload (example.com)", Host: "example.com", Username: "backup", RemotePath: "/backups"}}
