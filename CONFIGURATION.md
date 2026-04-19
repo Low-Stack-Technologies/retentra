@@ -110,6 +110,9 @@ If `path` is a directory, the directory and its contents are written under
 `target`. For example, `/srv/app/data/users.json` with `target: app/data` becomes
 `app/data/users.json` in the archive.
 
+Symlinks are rejected instead of followed or preserved. This prevents a backup
+source from accidentally including files outside the configured source path.
+
 `target` must be a relative archive path. It cannot be empty, absolute, `.`, or
 contain `..` path segments.
 

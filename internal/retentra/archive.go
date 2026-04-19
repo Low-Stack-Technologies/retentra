@@ -101,9 +101,12 @@ func writeZipItems(writer *zip.Writer, compression string, items []archiveItem) 
 
 func walkArchiveItem(item archiveItem, visit func(path, target string, info os.FileInfo) error) error {
 	target := cleanArchiveTarget(item.Target)
-	info, err := os.Stat(item.Path)
+	info, err := os.Lstat(item.Path)
 	if err != nil {
 		return err
+	}
+	if isSymlink(info) {
+		return fmt.Errorf("%s: symlinks are not supported", item.Path)
 	}
 	if !info.IsDir() {
 		return visit(item.Path, target, info)
@@ -112,6 +115,9 @@ func walkArchiveItem(item archiveItem, visit func(path, target string, info os.F
 	return filepath.Walk(item.Path, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
+		}
+		if isSymlink(info) {
+			return fmt.Errorf("%s: symlinks are not supported", path)
 		}
 		rel, err := filepath.Rel(item.Path, path)
 		if err != nil {
@@ -123,6 +129,10 @@ func walkArchiveItem(item archiveItem, visit func(path, target string, info os.F
 		}
 		return visit(path, entryTarget, info)
 	})
+}
+
+func isSymlink(info os.FileInfo) bool {
+	return info.Mode()&os.ModeSymlink != 0
 }
 
 func cleanArchiveTarget(target string) string {
