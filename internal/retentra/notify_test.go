@@ -260,6 +260,31 @@ func TestDiscordMessageBoundsLargeFields(t *testing.T) {
 	}
 }
 
+func TestDiscordMessageBoundsLargeSourceAndOutputFields(t *testing.T) {
+	status := successfulStatus()
+	status.SourceResults = make([]ReportResult, 20)
+	status.OutputResults = make([]ReportResult, 20)
+	for i := range status.SourceResults {
+		label := strings.Repeat("source-with-very-long-name-", 20) + fmt.Sprint(i)
+		status.SourceResults[i] = ReportResult{Label: label}
+		status.OutputResults[i] = ReportResult{Label: strings.Replace(label, "source", "output", 1)}
+	}
+
+	payload := discordMessage(status)
+	for _, name := range []string{"Sources", "Outputs"} {
+		field := findDiscordField(payload.Embeds[0].Fields, name)
+		if field == nil {
+			t.Fatalf("missing %s field", name)
+		}
+		if len([]rune(field.Value)) > maxReportValueRunes {
+			t.Fatalf("%s field length = %d, want <= %d", name, len([]rune(field.Value)), maxReportValueRunes)
+		}
+		if !strings.HasSuffix(field.Value, "...") {
+			t.Fatalf("%s field = %q, want truncated suffix", name, field.Value)
+		}
+	}
+}
+
 func successfulStatus() Status {
 	return Status{
 		Success:        true,

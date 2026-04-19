@@ -153,7 +153,7 @@ func discordFields(status Status) []discordEmbedField {
 	if status.ArchiveCreated {
 		fields = append(fields, discordEmbedField{Name: "Archive", Value: "📦 Created successfully", Inline: true})
 	} else if status.ArchiveError != nil {
-		fields = append(fields, discordEmbedField{Name: "Archive", Value: fmt.Sprintf("❌ %s", status.ArchiveError), Inline: true})
+		fields = append(fields, discordEmbedField{Name: "Archive", Value: reportValue([]string{fmt.Sprintf("❌ %s", status.ArchiveError)}, ""), Inline: true})
 	}
 	if len(status.Included) > 0 {
 		fields = append(fields, discordEmbedField{Name: "Included", Value: includedValue(status.Included)})
@@ -162,17 +162,17 @@ func discordFields(status Status) []discordEmbedField {
 		fields = append(fields, discordEmbedField{Name: "Outputs", Value: outputResultsValue(status.OutputResults), Inline: true})
 	}
 	if !status.Success && !reportHasFailure(status) && status.Error != nil {
-		fields = append(fields, discordEmbedField{Name: "Error", Value: fmt.Sprintf("❌ %s", status.Error)})
+		fields = append(fields, discordEmbedField{Name: "Error", Value: reportValue([]string{fmt.Sprintf("❌ %s", status.Error)}, "")})
 	}
 	return fields
 }
 
 func sourceResultsValue(results []ReportResult) string {
-	return strings.Join(sourceResultLines(results), "\n")
+	return reportValue(sourceResultLines(results), "\n")
 }
 
 func outputResultsValue(results []ReportResult) string {
-	return strings.Join(outputResultLines(results), "\n")
+	return reportValue(outputResultLines(results), "\n")
 }
 
 func sourceResultLines(results []ReportResult) []string {
@@ -191,7 +191,11 @@ func includedValue(included []string) string {
 	lines := limitedLines(len(included), func(i int) string {
 		return truncateRunes(included[i], maxReportLineRunes)
 	})
-	return truncateRunes(strings.Join(lines, ", "), maxReportValueRunes)
+	return reportValue(lines, ", ")
+}
+
+func reportValue(lines []string, separator string) string {
+	return truncateRunes(strings.Join(lines, separator), maxReportValueRunes)
 }
 
 func limitedLines(total int, line func(int) string) []string {
