@@ -4,9 +4,11 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"compress/gzip"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -76,5 +78,92 @@ func TestCreateZipArchiveWithTargets(t *testing.T) {
 	defer zr.Close()
 	if len(zr.File) != 1 || zr.File[0].Name != "app/db.sqlite" {
 		t.Fatalf("zip entries = %#v, want app/db.sqlite", zr.File)
+	}
+}
+
+func TestCreateArchiveRejectsSymlinkedFile(t *testing.T) {
+	for _, archive := range []ArchiveConfig{
+		{Format: "tar", Compression: "gzip"},
+		{Format: "zip", Compression: "none"},
+	} {
+		t.Run(archive.Format, func(t *testing.T) {
+			dir := t.TempDir()
+			sourceDir := filepath.Join(dir, "source")
+			if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			target := filepath.Join(dir, "secret.txt")
+			if err := os.WriteFile(target, []byte("secret"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(target, filepath.Join(sourceDir, "linked-secret.txt")); err != nil {
+				if errors.Is(err, os.ErrPermission) {
+					t.Skipf("symlink not permitted: %v", err)
+				}
+				t.Fatal(err)
+			}
+
+			err := createArchive(filepath.Join(dir, "backup.out"), archive, []archiveItem{{Path: sourceDir, Target: "data"}})
+			if err == nil || !strings.Contains(err.Error(), "symlinks are not supported") {
+				t.Fatalf("createArchive() error = %v, want symlink error", err)
+			}
+		})
+	}
+}
+
+func TestCreateArchiveRejectsSymlinkedDirectory(t *testing.T) {
+	for _, archive := range []ArchiveConfig{
+		{Format: "tar", Compression: "gzip"},
+		{Format: "zip", Compression: "none"},
+	} {
+		t.Run(archive.Format, func(t *testing.T) {
+			dir := t.TempDir()
+			sourceDir := filepath.Join(dir, "source")
+			if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			targetDir := filepath.Join(dir, "external")
+			if err := os.MkdirAll(targetDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(targetDir, filepath.Join(sourceDir, "linked-dir")); err != nil {
+				if errors.Is(err, os.ErrPermission) {
+					t.Skipf("symlink not permitted: %v", err)
+				}
+				t.Fatal(err)
+			}
+
+			err := createArchive(filepath.Join(dir, "backup.out"), archive, []archiveItem{{Path: sourceDir, Target: "data"}})
+			if err == nil || !strings.Contains(err.Error(), "symlinks are not supported") {
+				t.Fatalf("createArchive() error = %v, want symlink error", err)
+			}
+		})
+	}
+}
+
+func TestCreateArchiveRejectsRootSymlinkSource(t *testing.T) {
+	for _, archive := range []ArchiveConfig{
+		{Format: "tar", Compression: "gzip"},
+		{Format: "zip", Compression: "none"},
+	} {
+		t.Run(archive.Format, func(t *testing.T) {
+			dir := t.TempDir()
+			target := filepath.Join(dir, "target.txt")
+			if err := os.WriteFile(target, []byte("data"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			source := filepath.Join(dir, "source-link")
+			if err := os.Symlink(target, source); err != nil {
+				if errors.Is(err, os.ErrPermission) {
+					t.Skipf("symlink not permitted: %v", err)
+				}
+				t.Fatal(err)
+			}
+
+			err := createArchive(filepath.Join(dir, "backup.out"), archive, []archiveItem{{Path: source, Target: "data.txt"}})
+			if err == nil || !strings.Contains(err.Error(), "symlinks are not supported") {
+				t.Fatalf("createArchive() error = %v, want symlink error", err)
+			}
+		})
 	}
 }
