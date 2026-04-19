@@ -111,6 +111,15 @@ func TestConfigValidateRejectsMissingOutputLabel(t *testing.T) {
 	}
 }
 
+func TestConfigValidateRejectsNegativeRetention(t *testing.T) {
+	cfg := validConfig()
+	cfg.Outputs[0].Retention.KeepLast = -1
+
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() error = nil, want negative retention error")
+	}
+}
+
 func validConfig() Config {
 	return Config{
 		Report:  ReportConfig{Title: "Backup Report"},

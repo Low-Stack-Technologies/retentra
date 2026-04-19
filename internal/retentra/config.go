@@ -45,17 +45,22 @@ type ArchiveConfig struct {
 }
 
 type OutputConfig struct {
-	Type         string `yaml:"type"`
-	Label        string `yaml:"label"`
-	Path         string `yaml:"path"`
-	Host         string `yaml:"host"`
-	Port         int    `yaml:"port"`
-	Username     string `yaml:"username"`
-	RemotePath   string `yaml:"remote_path"`
-	IdentityFile string `yaml:"identity_file"`
-	Password     string `yaml:"password"`
-	KnownHosts   string `yaml:"known_hosts"`
-	Insecure     bool   `yaml:"insecure_ignore_host_key"`
+	Type         string          `yaml:"type"`
+	Label        string          `yaml:"label"`
+	Path         string          `yaml:"path"`
+	Host         string          `yaml:"host"`
+	Port         int             `yaml:"port"`
+	Username     string          `yaml:"username"`
+	RemotePath   string          `yaml:"remote_path"`
+	IdentityFile string          `yaml:"identity_file"`
+	Password     string          `yaml:"password"`
+	KnownHosts   string          `yaml:"known_hosts"`
+	Insecure     bool            `yaml:"insecure_ignore_host_key"`
+	Retention    RetentionConfig `yaml:"retention"`
+}
+
+type RetentionConfig struct {
+	KeepLast int `yaml:"keep_last"`
 }
 
 type NotificationConfig struct {
@@ -237,6 +242,9 @@ func validateOutput(i int, output OutputConfig) []error {
 		}
 	default:
 		errs = append(errs, fmt.Errorf("%s.type %q is unsupported", prefix, output.Type))
+	}
+	if output.Retention.KeepLast < 0 {
+		errs = append(errs, fmt.Errorf("%s.retention.keep_last must be greater than or equal to 0", prefix))
 	}
 	return errs
 }
