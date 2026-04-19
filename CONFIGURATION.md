@@ -39,6 +39,8 @@ outputs:
   - type: filesystem
     label: Local copy
     path: /var/backups
+    retention:
+      keep_last: 7
 
 notifications:
   - type: ntfy
@@ -231,6 +233,8 @@ Fields:
 - `type`: must be `filesystem`.
 - `label`: required display label for stdout and notification reports.
 - `path`: required local directory where the archive should be copied.
+- `retention.keep_last`: optional number of matching archives to keep. Defaults
+  to `0`, which disables pruning.
 
 The output directory is created if it does not exist. The archive filename is the
 rendered `archive.name`.
@@ -264,6 +268,8 @@ Fields:
 - `known_hosts`: optional known hosts file. Defaults to `~/.ssh/known_hosts`.
 - `insecure_ignore_host_key`: optional boolean. Set to `true` to skip host key
   verification.
+- `retention.keep_last`: optional number of matching archives to keep. Defaults
+  to `0`, which disables pruning.
 
 Exactly one of `identity_file` or `password` must be set.
 
@@ -271,6 +277,27 @@ Exactly one of `identity_file` or `password` must be set.
 
 `remote_path` is created if it does not exist. The uploaded file name is the
 rendered `archive.name`.
+
+### Output Retention
+
+Retention is opt-in per output:
+
+```yaml
+outputs:
+  - type: filesystem
+    label: Local copy
+    path: /var/backups
+    retention:
+      keep_last: 7
+```
+
+`keep_last` keeps the newest matching archives by modification time and removes
+older matches after a successful delivery to that output. A value of `0`
+disables retention and is the default. Negative values fail validation.
+
+Retention matches files by `archive.name`. The `{date}` placeholder matches
+archive dates formatted as `YYYY-MM-DD`; other filenames in the output
+directory are ignored.
 
 Prefer `known_hosts` verification for real backups. Use
 `insecure_ignore_host_key: true` only for local testing or controlled
@@ -463,6 +490,7 @@ Common validation failures:
 - `archive.compression` is unsupported for the selected format.
 - An SFTP output sets both `identity_file` and `password`, or neither.
 - An NTFY notification sets only one of `username` or `password`.
+- `retention.keep_last` is negative.
 
 Secrets such as SFTP passwords, Discord webhook URLs, and NTFY passwords should
 not be committed to public repositories.

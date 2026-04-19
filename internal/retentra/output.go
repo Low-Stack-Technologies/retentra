@@ -55,6 +55,27 @@ func copyFile(source, destination string) error {
 }
 
 func uploadSFTP(output OutputConfig, archivePath, archiveName string) error {
+	return withSFTPClient(output, func(client *sftp.Client) error {
+		if err := client.MkdirAll(output.RemotePath); err != nil {
+			return err
+		}
+		remoteFile, err := client.Create(filepath.ToSlash(filepath.Join(output.RemotePath, archiveName)))
+		if err != nil {
+			return err
+		}
+		defer remoteFile.Close()
+
+		localFile, err := os.Open(archivePath)
+		if err != nil {
+			return err
+		}
+		defer localFile.Close()
+		_, err = io.Copy(remoteFile, localFile)
+		return err
+	})
+}
+
+func withSFTPClient(output OutputConfig, use func(*sftp.Client) error) error {
 	auth, err := sftpAuth(output)
 	if err != nil {
 		return err
@@ -81,23 +102,7 @@ func uploadSFTP(output OutputConfig, archivePath, archiveName string) error {
 		return err
 	}
 	defer client.Close()
-
-	if err := client.MkdirAll(output.RemotePath); err != nil {
-		return err
-	}
-	remoteFile, err := client.Create(filepath.ToSlash(filepath.Join(output.RemotePath, archiveName)))
-	if err != nil {
-		return err
-	}
-	defer remoteFile.Close()
-
-	localFile, err := os.Open(archivePath)
-	if err != nil {
-		return err
-	}
-	defer localFile.Close()
-	_, err = io.Copy(remoteFile, localFile)
-	return err
+	return use(client)
 }
 
 func sftpAuth(output OutputConfig) (ssh.AuthMethod, error) {
