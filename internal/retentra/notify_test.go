@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -220,6 +221,67 @@ func TestDiscordMessageArchiveFailure(t *testing.T) {
 	assertDiscordField(t, embed.Fields, "Included", "wordpress.sql", false)
 	if field := findDiscordField(embed.Fields, "Error"); field != nil {
 		t.Fatalf("unexpected Error field: %#v", *field)
+	}
+}
+
+func TestStatusMessageSummarizesLargeIncludedList(t *testing.T) {
+	status := successfulStatus()
+	status.Included = make([]string, 25)
+	for i := range status.Included {
+		status.Included[i] = fmt.Sprintf("file-%02d.sql", i+1)
+	}
+
+	got := statusMessage(status)
+	if !strings.Contains(got, "... and 5 more") {
+		t.Fatalf("statusMessage() = %q, want omitted included count", got)
+	}
+	if strings.Contains(got, "file-25.sql") {
+		t.Fatalf("statusMessage() = %q, want truncated included list", got)
+	}
+}
+
+func TestDiscordMessageBoundsLargeFields(t *testing.T) {
+	status := successfulStatus()
+	status.Included = make([]string, 60)
+	for i := range status.Included {
+		status.Included[i] = strings.Repeat("very-long-target-name-", 20) + fmt.Sprint(i)
+	}
+
+	payload := discordMessage(status)
+	field := findDiscordField(payload.Embeds[0].Fields, "Included")
+	if field == nil {
+		t.Fatal("missing Included field")
+	}
+	if len([]rune(field.Value)) > maxReportValueRunes {
+		t.Fatalf("Included field length = %d, want <= %d", len([]rune(field.Value)), maxReportValueRunes)
+	}
+	if !strings.HasSuffix(field.Value, "...") {
+		t.Fatalf("Included field = %q, want truncated suffix", field.Value)
+	}
+}
+
+func TestDiscordMessageBoundsLargeSourceAndOutputFields(t *testing.T) {
+	status := successfulStatus()
+	status.SourceResults = make([]ReportResult, 20)
+	status.OutputResults = make([]ReportResult, 20)
+	for i := range status.SourceResults {
+		label := strings.Repeat("source-with-very-long-name-", 20) + fmt.Sprint(i)
+		status.SourceResults[i] = ReportResult{Label: label}
+		status.OutputResults[i] = ReportResult{Label: strings.Replace(label, "source", "output", 1)}
+	}
+
+	payload := discordMessage(status)
+	for _, name := range []string{"Sources", "Outputs"} {
+		field := findDiscordField(payload.Embeds[0].Fields, name)
+		if field == nil {
+			t.Fatalf("missing %s field", name)
+		}
+		if len([]rune(field.Value)) > maxReportValueRunes {
+			t.Fatalf("%s field length = %d, want <= %d", name, len([]rune(field.Value)), maxReportValueRunes)
+		}
+		if !strings.HasSuffix(field.Value, "...") {
+			t.Fatalf("%s field = %q, want truncated suffix", name, field.Value)
+		}
 	}
 }
 
