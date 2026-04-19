@@ -47,6 +47,9 @@ func Run(ctx context.Context, configPath string, out io.Writer) error {
 
 	p := placeholders{tmpdir: tmpdir, now: time.Now()}
 	archiveName := p.expand(cfg.Archive.Name)
+	if err := validateArchiveName(archiveName); err != nil {
+		return fmt.Errorf("archive.name: %w", err)
+	}
 	archivePath := filepath.Join(tmpdir, archiveName)
 	status := Status{ReportTitle: cfg.Report.Title, ArchiveName: archiveName, ArchivePath: archivePath}
 
