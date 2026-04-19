@@ -42,16 +42,35 @@ func copyFile(source, destination string) error {
 	}
 	defer src.Close()
 
-	dst, err := os.Create(destination)
+	dir := filepath.Dir(destination)
+	dst, err := os.CreateTemp(dir, "."+filepath.Base(destination)+".tmp-*")
 	if err != nil {
 		return err
 	}
-	defer dst.Close()
+	tempPath := dst.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tempPath)
+		}
+	}()
 
 	if _, err := io.Copy(dst, src); err != nil {
+		_ = dst.Close()
 		return err
 	}
-	return dst.Close()
+	if err := dst.Sync(); err != nil {
+		_ = dst.Close()
+		return err
+	}
+	if err := dst.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tempPath, destination); err != nil {
+		return err
+	}
+	cleanup = false
+	return nil
 }
 
 func uploadSFTP(output OutputConfig, archivePath, archiveName string) error {
@@ -85,19 +104,37 @@ func uploadSFTP(output OutputConfig, archivePath, archiveName string) error {
 	if err := client.MkdirAll(output.RemotePath); err != nil {
 		return err
 	}
-	remoteFile, err := client.Create(filepath.ToSlash(filepath.Join(output.RemotePath, archiveName)))
+	remotePath := filepath.ToSlash(filepath.Join(output.RemotePath, archiveName))
+	tempRemotePath := filepath.ToSlash(filepath.Join(output.RemotePath, fmt.Sprintf(".%s.tmp-%d", archiveName, time.Now().UnixNano())))
+	remoteFile, err := client.Create(tempRemotePath)
 	if err != nil {
 		return err
 	}
-	defer remoteFile.Close()
+	cleanupRemote := true
+	defer func() {
+		if cleanupRemote {
+			_ = client.Remove(tempRemotePath)
+		}
+	}()
 
 	localFile, err := os.Open(archivePath)
 	if err != nil {
+		_ = remoteFile.Close()
 		return err
 	}
 	defer localFile.Close()
-	_, err = io.Copy(remoteFile, localFile)
-	return err
+	if _, err := io.Copy(remoteFile, localFile); err != nil {
+		_ = remoteFile.Close()
+		return err
+	}
+	if err := remoteFile.Close(); err != nil {
+		return err
+	}
+	if err := client.Rename(tempRemotePath, remotePath); err != nil {
+		return err
+	}
+	cleanupRemote = false
+	return nil
 }
 
 func sftpAuth(output OutputConfig) (ssh.AuthMethod, error) {

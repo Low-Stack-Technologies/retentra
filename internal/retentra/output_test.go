@@ -30,6 +30,30 @@ func TestDeliverFilesystemOutputCopiesArchive(t *testing.T) {
 	}
 }
 
+func TestCopyFileFailureLeavesExistingDestinationUntouched(t *testing.T) {
+	dir := t.TempDir()
+	sourceDir := filepath.Join(dir, "source-dir")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(dir, "backup.tar.gz")
+	if err := os.WriteFile(destination, []byte("previous archive"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := copyFile(sourceDir, destination)
+	if err == nil {
+		t.Fatal("copyFile() error = nil, want read error")
+	}
+	got, readErr := os.ReadFile(destination)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(got) != "previous archive" {
+		t.Fatalf("destination = %q, want previous archive", got)
+	}
+}
+
 func TestExpandUserPath(t *testing.T) {
 	home, err := os.UserHomeDir()
 	if err != nil {
