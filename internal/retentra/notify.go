@@ -11,6 +11,27 @@ import (
 	"time"
 )
 
+const (
+	discordSuccessColor = 5763719
+	discordFailureColor = 15548997
+)
+
+type discordPayload struct {
+	Embeds []discordEmbed `json:"embeds"`
+}
+
+type discordEmbed struct {
+	Title  string              `json:"title"`
+	Color  int                 `json:"color"`
+	Fields []discordEmbedField `json:"fields"`
+}
+
+type discordEmbedField struct {
+	Name   string `json:"name"`
+	Value  string `json:"value"`
+	Inline bool   `json:"inline,omitempty"`
+}
+
 func sendNotifications(ctx context.Context, notifications []NotificationConfig, status Status) error {
 	var errs []error
 	for i, notification := range notifications {
@@ -22,12 +43,11 @@ func sendNotifications(ctx context.Context, notifications []NotificationConfig, 
 }
 
 func sendNotification(ctx context.Context, notification NotificationConfig, status Status) error {
-	message := statusMessage(status)
 	switch notification.Type {
 	case "discord":
-		return sendDiscord(ctx, notification.WebhookURL, message)
+		return sendDiscord(ctx, notification.WebhookURL, status)
 	case "ntfy":
-		return sendNTFY(ctx, notification, message)
+		return sendNTFY(ctx, notification, statusMessage(status))
 	default:
 		return fmt.Errorf("notification type %q is unsupported", notification.Type)
 	}
@@ -104,8 +124,74 @@ func writeLine(b *strings.Builder, line string) {
 	b.WriteString(line)
 }
 
-func sendDiscord(ctx context.Context, webhookURL, message string) error {
-	body, err := json.Marshal(map[string]string{"content": message})
+func discordMessage(status Status) discordPayload {
+	color := discordSuccessColor
+	if !status.Success {
+		color = discordFailureColor
+	}
+	embed := discordEmbed{
+		Title:  statusTitle(status),
+		Color:  color,
+		Fields: discordFields(status),
+	}
+	return discordPayload{Embeds: []discordEmbed{embed}}
+}
+
+func statusTitle(status Status) string {
+	if status.ReportTitle != "" {
+		return status.ReportTitle
+	}
+	return "Backup Report"
+}
+
+func discordFields(status Status) []discordEmbedField {
+	var fields []discordEmbedField
+	if len(status.SourceResults) > 0 {
+		fields = append(fields, discordEmbedField{Name: "Sources", Value: sourceResultsValue(status.SourceResults)})
+	}
+	if status.ArchiveCreated {
+		fields = append(fields, discordEmbedField{Name: "Archive", Value: "📦 Created successfully", Inline: true})
+	} else if status.ArchiveError != nil {
+		fields = append(fields, discordEmbedField{Name: "Archive", Value: fmt.Sprintf("❌ %s", status.ArchiveError), Inline: true})
+	}
+	if len(status.Included) > 0 {
+		fields = append(fields, discordEmbedField{Name: "Included", Value: strings.Join(status.Included, ", ")})
+	}
+	if len(status.OutputResults) > 0 {
+		fields = append(fields, discordEmbedField{Name: "Outputs", Value: outputResultsValue(status.OutputResults), Inline: true})
+	}
+	if !status.Success && !reportHasFailure(status) && status.Error != nil {
+		fields = append(fields, discordEmbedField{Name: "Error", Value: fmt.Sprintf("❌ %s", status.Error)})
+	}
+	return fields
+}
+
+func sourceResultsValue(results []ReportResult) string {
+	lines := make([]string, 0, len(results))
+	for _, result := range results {
+		if result.Success() {
+			lines = append(lines, fmt.Sprintf("✅ %s", result.Label))
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("❌ %s: %s", result.Label, result.Error))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func outputResultsValue(results []ReportResult) string {
+	lines := make([]string, 0, len(results))
+	for _, result := range results {
+		if result.Success() {
+			lines = append(lines, fmt.Sprintf("🚀 %s: Success", result.Label))
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("❌ %s: %s", result.Label, result.Error))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func sendDiscord(ctx context.Context, webhookURL string, status Status) error {
+	body, err := json.Marshal(discordMessage(status))
 	if err != nil {
 		return err
 	}
