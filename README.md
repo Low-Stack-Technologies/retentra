@@ -42,6 +42,12 @@ Prerequisites:
 
 - Go
 - Docker, only for SFTP integration tests
+- Google OAuth client ID and secret only if you want to use the Google Drive
+  output or `retentra auth google`
+
+Google auth stores refresh credentials in the OS secret store by default. If
+the secret store is unavailable, `retentra auth google login
+--allow-file-token-storage` falls back to the local config directory.
 
 Run the CLI directly during development:
 
@@ -64,6 +70,15 @@ retentra validate config.yaml
 retentra validate *-retentra.yaml
 ```
 
+Google Drive auth commands:
+
+```sh
+retentra auth google login
+retentra auth google status
+retentra auth google refresh
+retentra auth google logout
+```
+
 Build a local binary:
 
 ```sh
@@ -71,6 +86,10 @@ make build
 ./bin/retentra config.yaml
 ./bin/retentra --no-parallel *-retentra.yaml
 ```
+
+`make build` reads `.env` if one exists and uses `RETENTRA_GOOGLE_CLIENT_ID`
+and `RETENTRA_GOOGLE_CLIENT_SECRET` as build-time inputs. The release workflow
+loads the same values from the matching GitHub secrets.
 
 Run tests:
 
@@ -119,4 +138,8 @@ outputs:
   - type: filesystem
     label: Local copy
     path: /var/backups
+
+  - type: gdrive
+    label: Google Drive backup
+    path: Backups/App
 ```

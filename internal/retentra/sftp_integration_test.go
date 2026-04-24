@@ -4,6 +4,7 @@ package retentra
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -118,7 +119,7 @@ func deliverOutputEventually(output OutputConfig, archivePath, archiveName strin
 	var lastErr error
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
-		_, err := deliverOutput(output, archivePath, archiveName)
+		_, err := deliverOutput(context.Background(), output, archivePath, archiveName)
 		if err == nil {
 			return nil
 		}

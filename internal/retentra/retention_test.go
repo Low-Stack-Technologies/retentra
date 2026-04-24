@@ -1,6 +1,7 @@
 package retentra
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,7 +20,7 @@ func TestApplyFilesystemRetentionKeepsNewestMatchingArchives(t *testing.T) {
 		Path:      dir,
 		Retention: RetentionConfig{KeepLast: 2},
 	}
-	if err := applyOutputRetention(output, "backup-{date}.tar.gz"); err != nil {
+	if err := applyOutputRetention(context.Background(), output, "backup-{date}.tar.gz"); err != nil {
 		t.Fatalf("applyOutputRetention() error = %v", err)
 	}
 
@@ -34,7 +35,7 @@ func TestApplyFilesystemRetentionDisabled(t *testing.T) {
 	writeRetentionFile(t, dir, "backup-2026-04-17.tar.gz", time.Now())
 
 	output := OutputConfig{Type: "filesystem", Path: dir}
-	if err := applyOutputRetention(output, "backup-{date}.tar.gz"); err != nil {
+	if err := applyOutputRetention(context.Background(), output, "backup-{date}.tar.gz"); err != nil {
 		t.Fatalf("applyOutputRetention() error = %v", err)
 	}
 

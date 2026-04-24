@@ -43,6 +43,10 @@ outputs:
     identity_file: ~/.ssh/id_ed25519
     known_hosts: ~/.ssh/known_hosts
 
+  - type: gdrive
+    label: Google Drive backup
+    path: Backups/App
+
 # Password authentication is also supported for SFTP:
 #
 # outputs:
@@ -53,6 +57,13 @@ outputs:
 #     username: backup
 #     remote_path: /backups
 #     password: change-me
+#
+# Google Drive support uses local OAuth credentials and a per-user token cache:
+#
+#   retentra auth google login
+#   retentra auth google status
+#   retentra auth google refresh
+#   retentra auth google logout
 
 notifications:
   - type: discord

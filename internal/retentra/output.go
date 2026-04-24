@@ -1,6 +1,7 @@
 package retentra
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -15,7 +16,7 @@ import (
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
-func deliverOutput(output OutputConfig, archivePath, archiveName string) (string, error) {
+func deliverOutput(ctx context.Context, output OutputConfig, archivePath, archiveName string) (string, error) {
 	switch output.Type {
 	case "filesystem":
 		if err := os.MkdirAll(output.Path, 0o755); err != nil {
@@ -31,6 +32,12 @@ func deliverOutput(output OutputConfig, archivePath, archiveName string) (string
 			return "", err
 		}
 		return fmt.Sprintf("sftp://%s/%s", output.Host, filepath.ToSlash(filepath.Join(output.RemotePath, archiveName))), nil
+	case "gdrive":
+		desc, err := uploadGoogleDrive(ctx, output, archivePath, archiveName)
+		if err != nil {
+			return "", err
+		}
+		return desc, nil
 	default:
 		return "", fmt.Errorf("output type %q is unsupported", output.Type)
 	}

@@ -26,6 +26,13 @@ type cliOptions struct {
 }
 
 func runCLI(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "auth" {
+		if err := runAuthCLI(args[1:], stdout, stderr); err != nil {
+			fmt.Fprintf(stderr, "retentra: %v\n", err)
+			return 1
+		}
+		return 0
+	}
 	opts, help, err := parseCLI(args)
 	if help {
 		printHelp(stdout)
@@ -82,6 +89,56 @@ func parseCLI(args []string) (cliOptions, bool, error) {
 		return cliOptions{}, false, fmt.Errorf("usage: retentra [--no-parallel] config.yaml [config2.yaml ...]")
 	}
 	return cliOptions{parallel: !noParallel, configPaths: configPaths}, false, nil
+}
+
+func runAuthCLI(args []string, stdout, stderr io.Writer) error {
+	if len(args) == 0 {
+		printAuthHelp(stdout)
+		return nil
+	}
+	if args[0] == "--help" || args[0] == "-h" {
+		printAuthHelp(stdout)
+		return nil
+	}
+	if args[0] != "google" {
+		return fmt.Errorf("usage: retentra auth google [login|status|refresh|logout]")
+	}
+	return runGoogleAuthCLI(args[1:], stdout)
+}
+
+func runGoogleAuthCLI(args []string, stdout io.Writer) error {
+	if len(args) == 0 {
+		printGoogleAuthHelp(stdout)
+		return nil
+	}
+	if args[0] == "--help" || args[0] == "-h" {
+		printGoogleAuthHelp(stdout)
+		return nil
+	}
+	switch args[0] {
+	case "login":
+		allowFileTokenStorage := false
+		for _, arg := range args[1:] {
+			switch arg {
+			case "--allow-file-token-storage":
+				allowFileTokenStorage = true
+			case "--help", "-h":
+				printGoogleAuthHelp(stdout)
+				return nil
+			default:
+				return fmt.Errorf("usage: retentra auth google login [--allow-file-token-storage]")
+			}
+		}
+		return retentra.GoogleLoginWithOptions(context.Background(), stdout, allowFileTokenStorage)
+	case "status":
+		return retentra.GoogleStatus(stdout)
+	case "refresh":
+		return retentra.GoogleRefresh(context.Background(), stdout)
+	case "logout":
+		return retentra.GoogleLogout(stdout)
+	default:
+		return fmt.Errorf("usage: retentra auth google [login|status|refresh|logout]")
+	}
 }
 
 func parseValidateCLI(args []string) (cliOptions, bool, error) {
@@ -244,6 +301,7 @@ func printHelp(out io.Writer) {
 Usage:
   retentra [--no-parallel] config.yaml [config2.yaml ...]
   retentra validate config.yaml [config2.yaml ...]
+  retentra auth google [login|status|refresh|logout]
 
 Arguments:
   config.yaml    Path or glob pattern for a retentra YAML configuration file.
@@ -259,5 +317,41 @@ Examples:
   retentra --no-parallel *-retentra.yaml
   retentra /etc/retentra/nightly.yaml
   retentra validate /etc/retentra/nightly.yaml
+  retentra auth google status
+`)
+}
+
+func printAuthHelp(out io.Writer) {
+	fmt.Fprint(out, `retentra auth manages external integrations.
+
+Usage:
+  retentra auth google [login|status|refresh|logout]
+
+See also:
+  retentra auth google --help
+`)
+}
+
+func printGoogleAuthHelp(out io.Writer) {
+	fmt.Fprint(out, `retentra auth google manages Google Drive credentials.
+
+Usage:
+  retentra auth google login [--allow-file-token-storage]
+  retentra auth google status
+  retentra auth google refresh
+  retentra auth google logout
+
+Environment:
+  RETENTRA_GOOGLE_CLIENT_ID (build-time input; loaded by the Makefile or release workflow)
+  RETENTRA_GOOGLE_CLIENT_SECRET (build-time input; loaded by the Makefile or release workflow)
+  RETENTRA_GOOGLE_CONFIG_DIR
+  RETENTRA_GOOGLE_AUTH_URL
+  RETENTRA_GOOGLE_TOKEN_URL
+  RETENTRA_GOOGLE_REVOKE_URL
+  RETENTRA_GOOGLE_API_BASE_URL
+  RETENTRA_GOOGLE_UPLOAD_BASE_URL
+
+The secret store is used by default. Use --allow-file-token-storage only when
+the OS secret store is unavailable and you explicitly accept weaker storage.
 `)
 }

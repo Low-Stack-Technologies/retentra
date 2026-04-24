@@ -21,6 +21,15 @@ func TestConfigValidateAcceptsDocumentedShape(t *testing.T) {
 	}
 }
 
+func TestConfigValidateAcceptsGoogleDriveOutput(t *testing.T) {
+	cfg := validConfig()
+	cfg.Outputs = []OutputConfig{{Type: "gdrive", Label: "Google Drive", Path: "Backups/App"}}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
 func TestConfigValidateRejectsUnsupportedArchive(t *testing.T) {
 	cfg := validConfig()
 	cfg.Archive = ArchiveConfig{Name: "backup.7z", Format: "7z", Compression: "none"}
@@ -108,6 +117,15 @@ func TestConfigValidateRejectsMissingOutputLabel(t *testing.T) {
 
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("Validate() error = nil, want missing output label error")
+	}
+}
+
+func TestConfigValidateRejectsMissingGoogleDrivePath(t *testing.T) {
+	cfg := validConfig()
+	cfg.Outputs = []OutputConfig{{Type: "gdrive", Label: "Google Drive"}}
+
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() error = nil, want missing Google Drive path error")
 	}
 }
 

@@ -216,6 +216,7 @@ Supported output types:
 
 - `filesystem`
 - `sftp`
+- `gdrive`
 
 ### Filesystem Output
 
@@ -277,6 +278,64 @@ Exactly one of `identity_file` or `password` must be set.
 
 `remote_path` is created if it does not exist. The uploaded file name is the
 rendered `archive.name`.
+
+### Google Drive Output
+
+Use Google Drive output to upload the archive into a folder path in the
+authenticated user's personal Drive. Retentra stores a private app root folder
+and creates the configured path beneath it.
+
+This integration uses the `https://www.googleapis.com/auth/drive.file` scope.
+
+```yaml
+outputs:
+  - type: gdrive
+    label: Google Drive backup
+    path: Backups/App
+```
+
+Fields:
+
+- `type`: must be `gdrive`.
+- `label`: required display label for stdout and notification reports.
+- `path`: required Drive folder path relative to the user's personal Drive.
+  Missing folders are created automatically.
+- `retention.keep_last`: optional number of matching archives to keep. Defaults
+  to `0`, which disables pruning.
+
+Authenticate with:
+
+```sh
+retentra auth google login
+retentra auth google status
+retentra auth google refresh
+retentra auth google logout
+```
+
+Google OAuth client settings are injected at build time through the Makefile or
+release workflow:
+
+- `RETENTRA_GOOGLE_CLIENT_ID`
+- `RETENTRA_GOOGLE_CLIENT_SECRET`
+- `RETENTRA_GOOGLE_CONFIG_DIR`
+- `RETENTRA_GOOGLE_AUTH_URL`
+- `RETENTRA_GOOGLE_TOKEN_URL`
+- `RETENTRA_GOOGLE_REVOKE_URL`
+- `RETENTRA_GOOGLE_API_BASE_URL`
+- `RETENTRA_GOOGLE_UPLOAD_BASE_URL`
+
+`RETENTRA_GOOGLE_CLIENT_ID` and `RETENTRA_GOOGLE_CLIENT_SECRET` are the
+required OAuth settings. For local development, put them in `.env` and run
+`make build`; the Makefile loads `.env` automatically when it exists. The
+remaining values are optional runtime overrides for development or custom
+deployments.
+
+Google auth stores tokens in the OS secret store by default. Use
+`retentra auth google login --allow-file-token-storage` only if you explicitly
+want the weaker file-based cache in `~/.config/retentra/google/`.
+
+Drive support is optional. If the Google settings are not present, filesystem,
+SFTP, notifications, and other non-Drive behavior still work normally.
 
 ### Output Retention
 
@@ -488,6 +547,7 @@ Common validation failures:
 - An archive target is absolute, `.`, or contains `..`.
 - `archive.format` is unsupported.
 - `archive.compression` is unsupported for the selected format.
+- A Google Drive output is missing its destination path.
 - An SFTP output sets both `identity_file` and `password`, or neither.
 - An NTFY notification sets only one of `username` or `password`.
 - `retention.keep_last` is negative.

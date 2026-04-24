@@ -323,6 +323,22 @@ func TestRunCLITooManyArgsNoLongerErrors(t *testing.T) {
 	}
 }
 
+func TestRunCLIAuthGoogleStatusWithoutConfig(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	code := runCLI([]string{"auth", "google", "status"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0", code)
+	}
+	if !strings.Contains(stdout.String(), "Google auth:") {
+		t.Fatalf("stdout = %q, want Google auth status", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
 func stubRunConfig(t *testing.T, fn func(context.Context, string, io.Writer) error) func() {
 	t.Helper()
 	previous := runConfig

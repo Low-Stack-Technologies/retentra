@@ -7,19 +7,17 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 )
 
 func TestSendDiscordNotification(t *testing.T) {
 	var body string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newLoopbackTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		data, _ := io.ReadAll(r.Body)
 		body = string(data)
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	defer server.Close()
 
 	err := sendNotification(context.Background(), NotificationConfig{Type: "discord", WebhookURL: server.URL}, successfulStatus())
 	if err != nil {
@@ -53,13 +51,12 @@ func TestSendDiscordNotification(t *testing.T) {
 
 func TestSendNTFYNotificationWithoutAuth(t *testing.T) {
 	var auth, body string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newLoopbackTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth = r.Header.Get("Authorization")
 		data, _ := io.ReadAll(r.Body)
 		body = string(data)
 		w.WriteHeader(http.StatusOK)
 	}))
-	defer server.Close()
 
 	err := sendNotification(context.Background(), NotificationConfig{Type: "ntfy", URL: server.URL}, failedStatus())
 	if err != nil {
@@ -75,13 +72,12 @@ func TestSendNTFYNotificationWithoutAuth(t *testing.T) {
 
 func TestSendNTFYNotificationWithBasicAuth(t *testing.T) {
 	var username, password, body string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newLoopbackTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		username, password, _ = r.BasicAuth()
 		data, _ := io.ReadAll(r.Body)
 		body = string(data)
 		w.WriteHeader(http.StatusOK)
 	}))
-	defer server.Close()
 
 	err := sendNotification(context.Background(), NotificationConfig{Type: "ntfy", URL: server.URL, Username: "user", Password: "secret"}, failedStatus())
 	if err != nil {

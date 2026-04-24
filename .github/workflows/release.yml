@@ -41,9 +41,11 @@ jobs:
         env:
           GOARCH: ${{ matrix.arch }}
           ASSET: ${{ matrix.asset }}
+          RETENTRA_GOOGLE_CLIENT_ID: ${{ secrets.RETENTRA_GOOGLE_CLIENT_ID }}
+          RETENTRA_GOOGLE_CLIENT_SECRET: ${{ secrets.RETENTRA_GOOGLE_CLIENT_SECRET }}
         run: |
           mkdir -p dist
-          CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH" go build -o "dist/$ASSET" ./cmd/retentra
+          CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH" make build OUT="dist/$ASSET"
           sha256sum "dist/$ASSET" > "dist/$ASSET.sha256"
 
       - name: Upload release asset

@@ -224,6 +224,15 @@ func validateOutput(i int, output OutputConfig) []error {
 		if output.Path == "" {
 			errs = append(errs, fmt.Errorf("%s.path is required", prefix))
 		}
+	case "gdrive":
+		if output.Label == "" {
+			errs = append(errs, fmt.Errorf("%s.label is required", prefix))
+		}
+		if output.Path == "" {
+			errs = append(errs, fmt.Errorf("%s.path is required", prefix))
+		} else if err := validateDrivePath(output.Path); err != nil {
+			errs = append(errs, fmt.Errorf("%s.path: %w", prefix, err))
+		}
 	case "sftp":
 		if output.Label == "" {
 			errs = append(errs, fmt.Errorf("%s.label is required", prefix))
@@ -247,6 +256,14 @@ func validateOutput(i int, output OutputConfig) []error {
 		errs = append(errs, fmt.Errorf("%s.retention.keep_last must be greater than or equal to 0", prefix))
 	}
 	return errs
+}
+
+func validateDrivePath(target string) error {
+	cleaned := path.Clean(strings.ReplaceAll(target, "\\", "/"))
+	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "/") || strings.HasPrefix(cleaned, "../") || strings.Contains(cleaned, "/../") {
+		return fmt.Errorf("%q must be a relative Drive folder path without .. segments", target)
+	}
+	return nil
 }
 
 func validateNotification(i int, notification NotificationConfig) []error {

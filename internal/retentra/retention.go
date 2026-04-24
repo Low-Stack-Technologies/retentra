@@ -1,6 +1,7 @@
 package retentra
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,7 +18,7 @@ type retentionEntry struct {
 	modTime time.Time
 }
 
-func applyOutputRetention(output OutputConfig, archiveNameTemplate string) error {
+func applyOutputRetention(ctx context.Context, output OutputConfig, archiveNameTemplate string) error {
 	if output.Retention.KeepLast == 0 {
 		return nil
 	}
@@ -30,6 +31,8 @@ func applyOutputRetention(output OutputConfig, archiveNameTemplate string) error
 		return pruneFilesystemOutput(output.Path, matcher, output.Retention.KeepLast)
 	case "sftp":
 		return pruneSFTPOutput(output, matcher, output.Retention.KeepLast)
+	case "gdrive":
+		return pruneGoogleDriveOutput(ctx, output, matcher, output.Retention.KeepLast)
 	default:
 		return fmt.Errorf("output type %q is unsupported", output.Type)
 	}

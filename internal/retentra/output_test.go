@@ -1,6 +1,7 @@
 package retentra
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,7 +15,7 @@ func TestDeliverFilesystemOutputCopiesArchive(t *testing.T) {
 	}
 
 	outputDir := filepath.Join(dir, "out")
-	desc, err := deliverOutput(OutputConfig{Type: "filesystem", Path: outputDir}, archive, "backup.tar.gz")
+	desc, err := deliverOutput(context.Background(), OutputConfig{Type: "filesystem", Path: outputDir}, archive, "backup.tar.gz")
 	if err != nil {
 		t.Fatalf("deliverOutput() error = %v", err)
 	}
