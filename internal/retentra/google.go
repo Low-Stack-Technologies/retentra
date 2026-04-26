@@ -4,14 +4,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -23,7 +20,7 @@ import (
 )
 
 const (
-	defaultGoogleAuthURL          = "https://accounts.google.com/o/oauth2/v2/auth"
+	defaultGoogleDeviceCodeURL    = "https://oauth2.googleapis.com/device/code"
 	defaultGoogleTokenURL         = "https://oauth2.googleapis.com/token"
 	defaultGoogleRevokeURL        = "https://oauth2.googleapis.com/revoke"
 	defaultGoogleAPIBaseURL       = "https://www.googleapis.com/drive/v3"
@@ -36,25 +33,25 @@ const (
 )
 
 var (
-	googleClientID     = ""
-	googleClientSecret = ""
-	googleAuthURL      = defaultGoogleAuthURL
-	googleTokenURL     = defaultGoogleTokenURL
-	googleRevokeURL    = defaultGoogleRevokeURL
-	googleAPIBaseURL   = defaultGoogleAPIBaseURL
-	googleUploadURL    = defaultGoogleUploadURL
-	openBrowser        = openBrowserURL
+	googleClientID      = ""
+	googleClientSecret  = ""
+	googleDeviceCodeURL = defaultGoogleDeviceCodeURL
+	googleTokenURL      = defaultGoogleTokenURL
+	googleRevokeURL     = defaultGoogleRevokeURL
+	googleAPIBaseURL    = defaultGoogleAPIBaseURL
+	googleUploadURL     = defaultGoogleUploadURL
+	openBrowser         = openBrowserURL
 )
 
 type googleSettings struct {
-	clientID     string
-	clientSecret string
-	configDir    string
-	authURL      string
-	tokenURL     string
-	revokeURL    string
-	apiBaseURL   string
-	uploadURL    string
+	clientID      string
+	clientSecret  string
+	configDir     string
+	deviceCodeURL string
+	tokenURL      string
+	revokeURL     string
+	apiBaseURL    string
+	uploadURL     string
 }
 
 type googleTokenRecord struct {
@@ -81,9 +78,29 @@ type googleTokenResponse struct {
 	ErrorDesc    string `json:"error_description"`
 }
 
-type googlePKCE struct {
-	Verifier  string
-	Challenge string
+type googleOAuthError struct {
+	Code        string
+	Description string
+}
+
+func (e *googleOAuthError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if e.Description != "" {
+		return fmt.Sprintf("%s: %s", e.Code, e.Description)
+	}
+	return e.Code
+}
+
+type googleDeviceCodeResponse struct {
+	DeviceCode              string `json:"device_code"`
+	UserCode                string `json:"user_code"`
+	VerificationURL         string `json:"verification_url"`
+	VerificationURI         string `json:"verification_uri"`
+	VerificationURLComplete string `json:"verification_url_complete"`
+	ExpiresIn               int64  `json:"expires_in"`
+	Interval                int64  `json:"interval"`
 }
 
 type googleDriveState struct {
@@ -302,14 +319,14 @@ func GoogleLogout(out io.Writer) error {
 
 func loadGoogleSettings() googleSettings {
 	return googleSettings{
-		clientID:     firstNonEmpty(os.Getenv("RETENTRA_GOOGLE_CLIENT_ID"), googleClientID),
-		clientSecret: firstNonEmpty(os.Getenv("RETENTRA_GOOGLE_CLIENT_SECRET"), googleClientSecret),
-		configDir:    firstNonEmpty(os.Getenv("RETENTRA_GOOGLE_CONFIG_DIR"), defaultGoogleConfigDir()),
-		authURL:      firstNonEmpty(os.Getenv("RETENTRA_GOOGLE_AUTH_URL"), googleAuthURL),
-		tokenURL:     firstNonEmpty(os.Getenv("RETENTRA_GOOGLE_TOKEN_URL"), googleTokenURL),
-		revokeURL:    firstNonEmpty(os.Getenv("RETENTRA_GOOGLE_REVOKE_URL"), googleRevokeURL),
-		apiBaseURL:   firstNonEmpty(os.Getenv("RETENTRA_GOOGLE_API_BASE_URL"), googleAPIBaseURL),
-		uploadURL:    firstNonEmpty(os.Getenv("RETENTRA_GOOGLE_UPLOAD_BASE_URL"), googleUploadURL),
+		clientID:      firstNonEmpty(os.Getenv("RETENTRA_GOOGLE_CLIENT_ID"), googleClientID),
+		clientSecret:  firstNonEmpty(os.Getenv("RETENTRA_GOOGLE_CLIENT_SECRET"), googleClientSecret),
+		configDir:     firstNonEmpty(os.Getenv("RETENTRA_GOOGLE_CONFIG_DIR"), defaultGoogleConfigDir()),
+		deviceCodeURL: firstNonEmpty(os.Getenv("RETENTRA_GOOGLE_DEVICE_CODE_URL"), googleDeviceCodeURL),
+		tokenURL:      firstNonEmpty(os.Getenv("RETENTRA_GOOGLE_TOKEN_URL"), googleTokenURL),
+		revokeURL:     firstNonEmpty(os.Getenv("RETENTRA_GOOGLE_REVOKE_URL"), googleRevokeURL),
+		apiBaseURL:    firstNonEmpty(os.Getenv("RETENTRA_GOOGLE_API_BASE_URL"), googleAPIBaseURL),
+		uploadURL:     firstNonEmpty(os.Getenv("RETENTRA_GOOGLE_UPLOAD_BASE_URL"), googleUploadURL),
 	}
 }
 
@@ -418,105 +435,106 @@ func writeGoogleTokenRecord(path string, record googleTokenRecord) error {
 }
 
 func performGoogleLogin(ctx context.Context, settings googleSettings, out io.Writer) (googleToken, error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	deviceCode, err := requestGoogleDeviceCode(ctx, settings)
 	if err != nil {
 		return googleToken{}, err
 	}
-	defer listener.Close()
-
-	redirectURL := fmt.Sprintf("http://%s/callback", listener.Addr().String())
-	state := randomState()
-	pkce := newPKCE()
-	codeCh := make(chan string, 1)
-	errCh := make(chan error, 1)
-
-	mux := http.NewServeMux()
-	server := &http.Server{Handler: mux}
-	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("state") != state {
-			http.Error(w, "invalid state", http.StatusBadRequest)
-			select {
-			case errCh <- fmt.Errorf("oauth state mismatch"):
-			default:
-			}
-			return
-		}
-		if oauthErr := r.URL.Query().Get("error"); oauthErr != "" {
-			select {
-			case errCh <- fmt.Errorf("oauth error: %s", oauthErr):
-			default:
-			}
-			http.Error(w, "oauth error", http.StatusBadRequest)
-			return
-		}
-		code := r.URL.Query().Get("code")
-		if code == "" {
-			select {
-			case errCh <- fmt.Errorf("oauth callback missing code"):
-			default:
-			}
-			http.Error(w, "missing code", http.StatusBadRequest)
-			return
-		}
-		fmt.Fprintln(w, "Google authentication complete. You can close this window.")
-		select {
-		case codeCh <- code:
-		default:
-		}
-	})
-
-	serverErr := make(chan error, 1)
-	go func() {
-		serverErr <- server.Serve(listener)
-	}()
-	defer func() {
-		ctxShutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = server.Shutdown(ctxShutdown)
-	}()
-
-	authURL := buildGoogleAuthURL(settings, redirectURL, state, pkce.Challenge)
-	fmt.Fprintln(out, "Open this URL to authenticate:")
-	fmt.Fprintln(out, authURL)
-	_ = openBrowser(authURL)
-
-	var code string
-	select {
-	case code = <-codeCh:
-	case err := <-errCh:
-		return googleToken{}, err
-	case err := <-serverErr:
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return googleToken{}, err
-		}
-	case <-ctx.Done():
-		return googleToken{}, ctx.Err()
+	verificationURL := deviceCode.VerificationURL
+	if verificationURL == "" {
+		verificationURL = deviceCode.VerificationURI
 	}
-
-	if code == "" {
-		select {
-		case code = <-codeCh:
-		case err := <-errCh:
-			return googleToken{}, err
-		case <-ctx.Done():
-			return googleToken{}, ctx.Err()
-		}
+	if verificationURL == "" {
+		return googleToken{}, fmt.Errorf("device code response missing verification URL")
 	}
-	return exchangeGoogleToken(ctx, settings, code, redirectURL, pkce.Verifier)
+	if deviceCode.Interval <= 0 {
+		deviceCode.Interval = 5
+	}
+	fmt.Fprintln(out, "Open this URL on another device to authenticate:")
+	fmt.Fprintln(out, verificationURL)
+	fmt.Fprintf(out, "Enter this code: %s\n", deviceCode.UserCode)
+	fmt.Fprintln(out, "Waiting for Google approval...")
+	return pollGoogleDeviceToken(ctx, settings, deviceCode)
 }
 
-func buildGoogleAuthURL(settings googleSettings, redirectURL, state, challenge string) string {
+func requestGoogleDeviceCode(ctx context.Context, settings googleSettings) (googleDeviceCodeResponse, error) {
+	form := url.Values{}
+	form.Set("client_id", settings.clientID)
+	form.Set("scope", googleDriveScope)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, settings.deviceCodeURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return googleDeviceCodeResponse{}, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	var resp googleDeviceCodeResponse
+	if err := doGoogleJSONRequest(req, &resp); err != nil {
+		return googleDeviceCodeResponse{}, err
+	}
+	if resp.DeviceCode == "" {
+		return googleDeviceCodeResponse{}, fmt.Errorf("device code response missing device code")
+	}
+	if resp.UserCode == "" {
+		return googleDeviceCodeResponse{}, fmt.Errorf("device code response missing user code")
+	}
+	return resp, nil
+}
+
+func pollGoogleDeviceToken(ctx context.Context, settings googleSettings, deviceCode googleDeviceCodeResponse) (googleToken, error) {
+	interval := time.Duration(deviceCode.Interval) * time.Second
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	deadline := time.Now().Add(time.Duration(deviceCode.ExpiresIn) * time.Second)
+	if deviceCode.ExpiresIn <= 0 {
+		deadline = time.Now().Add(30 * time.Minute)
+	}
+
+	for {
+		if time.Now().After(deadline) {
+			return googleToken{}, fmt.Errorf("Google authorization expired before completion")
+		}
+		if err := waitForGoogleDevicePoll(ctx, interval); err != nil {
+			return googleToken{}, err
+		}
+		token, err := exchangeGoogleDeviceToken(ctx, settings, deviceCode.DeviceCode)
+		if err == nil {
+			return token, nil
+		}
+		var oauthErr *googleOAuthError
+		if !errors.As(err, &oauthErr) {
+			return googleToken{}, err
+		}
+		switch oauthErr.Code {
+		case "authorization_pending":
+			continue
+		case "slow_down":
+			interval += 5 * time.Second
+			continue
+		case "access_denied":
+			return googleToken{}, fmt.Errorf("Google authorization was denied")
+		case "expired_token":
+			return googleToken{}, fmt.Errorf("Google authorization expired before completion")
+		default:
+			return googleToken{}, err
+		}
+	}
+}
+
+func exchangeGoogleDeviceToken(ctx context.Context, settings googleSettings, deviceCode string) (googleToken, error) {
 	values := url.Values{}
 	values.Set("client_id", settings.clientID)
-	values.Set("redirect_uri", redirectURL)
-	values.Set("response_type", "code")
-	values.Set("scope", googleDriveScope)
-	values.Set("access_type", "offline")
-	values.Set("prompt", "consent")
-	values.Set("state", state)
-	values.Set("code_challenge", challenge)
-	values.Set("code_challenge_method", "S256")
-	return settings.authURL + "?" + values.Encode()
+	values.Set("client_secret", settings.clientSecret)
+	values.Set("device_code", deviceCode)
+	values.Set("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, settings.tokenURL, strings.NewReader(values.Encode()))
+	if err != nil {
+		return googleToken{}, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	tokenResp, err := doGoogleTokenRequest(req)
+	if err != nil {
+		return googleToken{}, err
+	}
+	return tokenResponseToToken(tokenResp)
 }
 
 func exchangeGoogleToken(ctx context.Context, settings googleSettings, code, redirectURL, verifier string) (googleToken, error) {
@@ -591,29 +609,12 @@ func revokeGoogleToken(ctx context.Context, settings googleSettings, token strin
 }
 
 func doGoogleTokenRequest(req *http.Request) (googleTokenResponse, error) {
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return googleTokenResponse{}, err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return googleTokenResponse{}, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		var tokenErr googleTokenResponse
-		_ = json.Unmarshal(body, &tokenErr)
-		if tokenErr.Error != "" {
-			return googleTokenResponse{}, fmt.Errorf("%s: %s", tokenErr.Error, tokenErr.ErrorDesc)
-		}
-		return googleTokenResponse{}, fmt.Errorf("token request failed: %s", resp.Status)
-	}
 	var tokenResp googleTokenResponse
-	if err := json.Unmarshal(body, &tokenResp); err != nil {
+	if err := doGoogleJSONRequest(req, &tokenResp); err != nil {
 		return googleTokenResponse{}, err
 	}
 	if tokenResp.Error != "" {
-		return googleTokenResponse{}, fmt.Errorf("%s: %s", tokenResp.Error, tokenResp.ErrorDesc)
+		return googleTokenResponse{}, &googleOAuthError{Code: tokenResp.Error, Description: tokenResp.ErrorDesc}
 	}
 	return tokenResp, nil
 }
@@ -669,6 +670,44 @@ func openBrowserURL(rawURL string) error {
 		return exec.Command("rundll32", "url.dll,FileProtocolHandler", rawURL).Start()
 	default:
 		return exec.Command("xdg-open", rawURL).Start()
+	}
+}
+
+func doGoogleJSONRequest(req *http.Request, out any) error {
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		var oauthErr struct {
+			Error     string `json:"error"`
+			ErrorDesc string `json:"error_description"`
+		}
+		_ = json.Unmarshal(body, &oauthErr)
+		if oauthErr.Error != "" {
+			return &googleOAuthError{Code: oauthErr.Error, Description: oauthErr.ErrorDesc}
+		}
+		return fmt.Errorf("request failed: %s", resp.Status)
+	}
+	if out == nil {
+		return nil
+	}
+	return json.Unmarshal(body, out)
+}
+
+var waitForGoogleDevicePoll = func(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
@@ -751,27 +790,6 @@ func googleDriveUploadBaseURL(settings googleSettings) string {
 
 func escapeDriveQueryString(value string) string {
 	return strings.ReplaceAll(value, "'", "\\'")
-}
-
-func newPKCE() googlePKCE {
-	verifier := randomURLSafeString(64)
-	return googlePKCE{
-		Verifier:  verifier,
-		Challenge: pkceChallengeS256(verifier),
-	}
-}
-
-func pkceChallengeS256(verifier string) string {
-	sum := sha256.Sum256([]byte(verifier))
-	return base64.RawURLEncoding.EncodeToString(sum[:])
-}
-
-func randomURLSafeString(n int) string {
-	buf := make([]byte, n)
-	if _, err := rand.Read(buf); err != nil {
-		panic(err)
-	}
-	return base64.RawURLEncoding.EncodeToString(buf)
 }
 
 func googleDriveFolderQuery(name, parentID string) string {

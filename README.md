@@ -48,6 +48,8 @@ Prerequisites:
 Google auth stores refresh credentials in the OS secret store by default. If
 the secret store is unavailable, `retentra auth google login
 --allow-file-token-storage` falls back to the local config directory.
+Login uses Google'"'"'s limited-input device flow, so it can be completed on a
+separate machine over SSH without running a browser on the Retentra host.
 
 Run the CLI directly during development:
 

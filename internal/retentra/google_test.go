@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -92,37 +91,47 @@ func TestGoogleAccessTokenRefreshesExpiredToken(t *testing.T) {
 	}
 }
 
-func TestBuildGoogleAuthURLUsesPKCEAndDriveFileScope(t *testing.T) {
-	settings := googleSettings{
-		clientID: "client",
-		authURL:  "https://accounts.google.com/o/oauth2/v2/auth",
-	}
-	challenge := pkceChallengeS256("verifier")
-	got := buildGoogleAuthURL(settings, "http://127.0.0.1:1234/callback", "state", challenge)
+func TestRequestGoogleDeviceCodeUsesClientIDAndDriveScope(t *testing.T) {
+	server := newLoopbackTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatal(err)
+		}
+		if got := r.Form.Get("client_id"); got != "client" {
+			t.Fatalf("client_id = %q, want client", got)
+		}
+		if got := r.Form.Get("scope"); got != googleDriveScope {
+			t.Fatalf("scope = %q, want %q", got, googleDriveScope)
+		}
+		_ = json.NewEncoder(w).Encode(googleDeviceCodeResponse{
+			DeviceCode:      "device",
+			UserCode:        "ABCD-EFGH",
+			VerificationURL: "https://www.google.com/device",
+			ExpiresIn:       1800,
+			Interval:        5,
+		})
+	}))
 
-	u, err := url.Parse(got)
+	t.Setenv("RETENTRA_GOOGLE_CLIENT_ID", "client")
+	t.Setenv("RETENTRA_GOOGLE_CLIENT_SECRET", "secret")
+	t.Setenv("RETENTRA_GOOGLE_DEVICE_CODE_URL", server.URL)
+
+	resp, err := requestGoogleDeviceCode(context.Background(), loadGoogleSettings())
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("requestGoogleDeviceCode() error = %v", err)
 	}
-	q := u.Query()
-	if got := q.Get("client_id"); got != "client" {
-		t.Fatalf("client_id = %q, want client", got)
+	if resp.DeviceCode != "device" {
+		t.Fatalf("DeviceCode = %q, want device", resp.DeviceCode)
 	}
-	if got := q.Get("scope"); got != googleDriveScope {
-		t.Fatalf("scope = %q, want %q", got, googleDriveScope)
+	if resp.UserCode != "ABCD-EFGH" {
+		t.Fatalf("UserCode = %q, want ABCD-EFGH", resp.UserCode)
 	}
-	if got := q.Get("code_challenge"); got != challenge {
-		t.Fatalf("code_challenge = %q, want %q", got, challenge)
-	}
-	if got := q.Get("code_challenge_method"); got != "S256" {
-		t.Fatalf("code_challenge_method = %q, want S256", got)
-	}
-	if got := q.Get("redirect_uri"); got != "http://127.0.0.1:1234/callback" {
-		t.Fatalf("redirect_uri = %q", got)
+	if resp.VerificationURL != "https://www.google.com/device" {
+		t.Fatalf("VerificationURL = %q, want verification URL", resp.VerificationURL)
 	}
 }
 
-func TestExchangeGoogleTokenUsesPKCEVerifier(t *testing.T) {
+func TestPerformGoogleLoginPollsUntilSuccess(t *testing.T) {
+	tokenRequests := 0
 	tokenServer := newLoopbackTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			t.Fatal(err)
@@ -130,27 +139,132 @@ func TestExchangeGoogleTokenUsesPKCEVerifier(t *testing.T) {
 		if got := r.Form.Get("client_secret"); got != "secret" {
 			t.Fatalf("client_secret = %q, want secret", got)
 		}
-		if got := r.Form.Get("code_verifier"); got != "verifier" {
-			t.Fatalf("code_verifier = %q, want verifier", got)
+		if got := r.Form.Get("client_id"); got != "client" {
+			t.Fatalf("client_id = %q, want client", got)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"access_token": "access",
-			"token_type":   "Bearer",
-			"expires_in":   3600,
-			"scope":        googleDriveScope,
+		if got := r.Form.Get("device_code"); got != "device" {
+			t.Fatalf("device_code = %q, want device", got)
+		}
+		if got := r.Form.Get("grant_type"); got != "urn:ietf:params:oauth:grant-type:device_code" {
+			t.Fatalf("grant_type = %q, want device_code grant", got)
+		}
+		tokenRequests++
+		switch tokenRequests {
+		case 1:
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"error":             "authorization_pending",
+				"error_description": "pending",
+			})
+		case 2:
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"error":             "slow_down",
+				"error_description": "slow down",
+			})
+		default:
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"access_token":  "access",
+				"refresh_token": "refresh",
+				"token_type":    "Bearer",
+				"expires_in":    3600,
+				"scope":         googleDriveScope,
+			})
+		}
+	}))
+
+	deviceServer := newLoopbackTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatal(err)
+		}
+		_ = json.NewEncoder(w).Encode(googleDeviceCodeResponse{
+			DeviceCode:      "device",
+			UserCode:        "ABCD-EFGH",
+			VerificationURL: "https://www.google.com/device",
+			ExpiresIn:       1800,
+			Interval:        0,
 		})
 	}))
 
-	got, err := exchangeGoogleToken(context.Background(), googleSettings{
-		clientID:     "client",
-		clientSecret: "secret",
-		tokenURL:     tokenServer.URL,
-	}, "code", "http://127.0.0.1/callback", "verifier")
+	t.Setenv("RETENTRA_GOOGLE_CLIENT_ID", "client")
+	t.Setenv("RETENTRA_GOOGLE_CLIENT_SECRET", "secret")
+	t.Setenv("RETENTRA_GOOGLE_DEVICE_CODE_URL", deviceServer.URL)
+	t.Setenv("RETENTRA_GOOGLE_TOKEN_URL", tokenServer.URL)
+
+	originalWait := waitForGoogleDevicePoll
+	waitForGoogleDevicePoll = func(context.Context, time.Duration) error { return nil }
+	t.Cleanup(func() { waitForGoogleDevicePoll = originalWait })
+
+	var stdout bytes.Buffer
+	got, err := performGoogleLogin(context.Background(), loadGoogleSettings(), &stdout)
 	if err != nil {
-		t.Fatalf("exchangeGoogleToken() error = %v", err)
+		t.Fatalf("performGoogleLogin() error = %v", err)
 	}
 	if got.AccessToken != "access" {
 		t.Fatalf("AccessToken = %q, want access", got.AccessToken)
+	}
+	if got.RefreshToken != "refresh" {
+		t.Fatalf("RefreshToken = %q, want refresh", got.RefreshToken)
+	}
+	if tokenRequests != 3 {
+		t.Fatalf("tokenRequests = %d, want 3", tokenRequests)
+	}
+	if !strings.Contains(stdout.String(), "ABCD-EFGH") {
+		t.Fatalf("stdout = %q, want user code", stdout.String())
+	}
+}
+
+func TestPollGoogleDeviceTokenReturnsDeniedError(t *testing.T) {
+	tokenServer := newLoopbackTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error":             "access_denied",
+			"error_description": "denied",
+		})
+	}))
+
+	t.Setenv("RETENTRA_GOOGLE_CLIENT_ID", "client")
+	t.Setenv("RETENTRA_GOOGLE_CLIENT_SECRET", "secret")
+	t.Setenv("RETENTRA_GOOGLE_TOKEN_URL", tokenServer.URL)
+
+	originalWait := waitForGoogleDevicePoll
+	waitForGoogleDevicePoll = func(context.Context, time.Duration) error { return nil }
+	t.Cleanup(func() { waitForGoogleDevicePoll = originalWait })
+
+	_, err := pollGoogleDeviceToken(context.Background(), loadGoogleSettings(), googleDeviceCodeResponse{
+		DeviceCode: "device",
+		ExpiresIn:  1800,
+		Interval:   1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "denied") {
+		t.Fatalf("pollGoogleDeviceToken() error = %v, want denied error", err)
+	}
+}
+
+func TestPollGoogleDeviceTokenReturnsExpiredError(t *testing.T) {
+	tokenServer := newLoopbackTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error":             "expired_token",
+			"error_description": "expired",
+		})
+	}))
+
+	t.Setenv("RETENTRA_GOOGLE_CLIENT_ID", "client")
+	t.Setenv("RETENTRA_GOOGLE_CLIENT_SECRET", "secret")
+	t.Setenv("RETENTRA_GOOGLE_TOKEN_URL", tokenServer.URL)
+
+	originalWait := waitForGoogleDevicePoll
+	waitForGoogleDevicePoll = func(context.Context, time.Duration) error { return nil }
+	t.Cleanup(func() { waitForGoogleDevicePoll = originalWait })
+
+	_, err := pollGoogleDeviceToken(context.Background(), loadGoogleSettings(), googleDeviceCodeResponse{
+		DeviceCode: "device",
+		ExpiresIn:  1800,
+		Interval:   1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "expired") {
+		t.Fatalf("pollGoogleDeviceToken() error = %v, want expired error", err)
 	}
 }
 

@@ -333,7 +333,7 @@ See also:
 }
 
 func printGoogleAuthHelp(out io.Writer) {
-	fmt.Fprint(out, `retentra auth google manages Google Drive credentials.
+	fmt.Fprint(out, `retentra auth google manages Google Drive credentials using Google's limited-input device flow.
 
 Usage:
   retentra auth google login [--allow-file-token-storage]
@@ -345,7 +345,7 @@ Environment:
   RETENTRA_GOOGLE_CLIENT_ID (build-time input; loaded by the Makefile or release workflow)
   RETENTRA_GOOGLE_CLIENT_SECRET (build-time input; loaded by the Makefile or release workflow)
   RETENTRA_GOOGLE_CONFIG_DIR
-  RETENTRA_GOOGLE_AUTH_URL
+  RETENTRA_GOOGLE_DEVICE_CODE_URL
   RETENTRA_GOOGLE_TOKEN_URL
   RETENTRA_GOOGLE_REVOKE_URL
   RETENTRA_GOOGLE_API_BASE_URL
@@ -353,5 +353,7 @@ Environment:
 
 The secret store is used by default. Use --allow-file-token-storage only when
 the OS secret store is unavailable and you explicitly accept weaker storage.
+Login prints a verification URL and code that can be completed from another
+machine over SSH.
 `)
 }

@@ -318,7 +318,7 @@ release workflow:
 - `RETENTRA_GOOGLE_CLIENT_ID`
 - `RETENTRA_GOOGLE_CLIENT_SECRET`
 - `RETENTRA_GOOGLE_CONFIG_DIR`
-- `RETENTRA_GOOGLE_AUTH_URL`
+- `RETENTRA_GOOGLE_DEVICE_CODE_URL`
 - `RETENTRA_GOOGLE_TOKEN_URL`
 - `RETENTRA_GOOGLE_REVOKE_URL`
 - `RETENTRA_GOOGLE_API_BASE_URL`
@@ -333,6 +333,8 @@ deployments.
 Google auth stores tokens in the OS secret store by default. Use
 `retentra auth google login --allow-file-token-storage` only if you explicitly
 want the weaker file-based cache in `~/.config/retentra/google/`.
+Login uses Google'"'"'s limited-input device flow, so the verification step can be
+completed from another machine over SSH.
 
 Drive support is optional. If the Google settings are not present, filesystem,
 SFTP, notifications, and other non-Drive behavior still work normally.
