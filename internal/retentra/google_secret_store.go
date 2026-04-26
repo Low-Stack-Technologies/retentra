@@ -22,7 +22,8 @@ type googleCredentialStore interface {
 }
 
 type googleTokenFileStore struct {
-	path string
+	path     string
+	settings googleSettings
 }
 
 type googleOSSecretStore struct {
@@ -43,7 +44,7 @@ func newGoogleTokenFileStore(settings googleSettings) (googleCredentialStore, er
 	if err != nil {
 		return nil, err
 	}
-	return googleTokenFileStore{path: path}, nil
+	return googleTokenFileStore{path: path, settings: settings}, nil
 }
 
 func newGoogleOSSecretStore(settings googleSettings) googleCredentialStore {
@@ -122,7 +123,7 @@ func migrateLegacyGoogleTokenStore(ctx context.Context, settings googleSettings,
 	}
 	state.ClientID = settings.clientID
 	state.CredentialStorage = googleCredentialStorageSecret
-	if err := saveGoogleDriveState(statePath, state); err != nil {
+	if err := saveGoogleDriveState(statePath, settings, state); err != nil {
 		return nil, "", err
 	}
 	return secretStore, googleCredentialStorageSecret, nil
@@ -144,12 +145,12 @@ func (s googleTokenFileStore) Exists() (bool, error) {
 }
 
 func (s googleTokenFileStore) Load(ctx context.Context) (googleTokenRecord, error) {
-	_, record, err := readGoogleTokenRecord(s.path)
+	_, record, _, err := readGoogleTokenRecord(s.path, s.settings)
 	return record, err
 }
 
 func (s googleTokenFileStore) Save(ctx context.Context, record googleTokenRecord) error {
-	return writeGoogleTokenRecord(s.path, record)
+	return writeGoogleTokenRecord(s.path, s.settings, record)
 }
 
 func (s googleTokenFileStore) Delete(ctx context.Context) error {

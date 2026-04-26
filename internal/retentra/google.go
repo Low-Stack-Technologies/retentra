@@ -3,8 +3,6 @@ package retentra
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,9 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 )
@@ -40,7 +36,6 @@ var (
 	googleRevokeURL     = defaultGoogleRevokeURL
 	googleAPIBaseURL    = defaultGoogleAPIBaseURL
 	googleUploadURL     = defaultGoogleUploadURL
-	openBrowser         = openBrowserURL
 )
 
 type googleSettings struct {
@@ -214,7 +209,7 @@ func googleLogin(ctx context.Context, out io.Writer, allowFileTokenStorage bool)
 	}
 	state.ClientID = settings.clientID
 	state.CredentialStorage = mode
-	if err := saveGoogleDriveState(statePath, state); err != nil {
+	if err := saveGoogleDriveState(statePath, settings, state); err != nil {
 		return err
 	}
 	if mode == googleCredentialStorageSecret {
@@ -269,7 +264,7 @@ func googleRefresh(ctx context.Context, out io.Writer) error {
 	}
 	state.ClientID = settings.clientID
 	state.CredentialStorage = mode
-	if err := saveGoogleDriveState(statePath, state); err != nil {
+	if err := saveGoogleDriveState(statePath, settings, state); err != nil {
 		return err
 	}
 	if mode == googleCredentialStorageSecret {
@@ -306,7 +301,7 @@ func googleLogout(out io.Writer) error {
 	}
 	_ = removeGoogleTokenFile(settings)
 	state.CredentialStorage = ""
-	if err := saveGoogleDriveState(statePath, state); err != nil {
+	if err := saveGoogleDriveState(statePath, settings, state); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "Google credentials removed from %s\n", storageLabel)
@@ -380,58 +375,26 @@ func googleTokenCachePath(settings googleSettings) (string, error) {
 	return filepath.Join(settings.configDir, googleTokenFileName), nil
 }
 
-func readGoogleTokenRecord(path string) (string, googleTokenRecord, error) {
+func readGoogleTokenRecord(path string, settings googleSettings) (string, googleTokenRecord, bool, error) {
+	var record googleTokenRecord
+	plaintext, err := readGoogleEncryptedJSONFile(path, settings, &record)
+	if err != nil {
+		return "", googleTokenRecord{}, false, err
+	}
+	if plaintext {
+		if err := writeGoogleTokenRecord(path, settings, record); err != nil {
+			return "", googleTokenRecord{}, false, err
+		}
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", googleTokenRecord{}, err
+		return "", googleTokenRecord{}, false, err
 	}
-	var record googleTokenRecord
-	if err := json.Unmarshal(data, &record); err != nil {
-		return "", googleTokenRecord{}, err
-	}
-	return string(data), record, nil
+	return string(data), record, plaintext, nil
 }
 
-func writeGoogleTokenRecord(path string, record googleTokenRecord) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(record, "", "  ")
-	if err != nil {
-		return err
-	}
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	cleanup := true
-	defer func() {
-		if cleanup {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return err
-	}
-	cleanup = false
-	return nil
+func writeGoogleTokenRecord(path string, settings googleSettings, record googleTokenRecord) error {
+	return writeGoogleEncryptedJSONFile(path, settings, record)
 }
 
 func performGoogleLogin(ctx context.Context, settings googleSettings, out io.Writer) (googleToken, error) {
@@ -638,14 +601,6 @@ func tokenResponseToToken(resp googleTokenResponse) (googleToken, error) {
 	return token, nil
 }
 
-func randomState() string {
-	var buf [16]byte
-	if _, err := rand.Read(buf[:]); err != nil {
-		panic(err)
-	}
-	return hex.EncodeToString(buf[:])
-}
-
 func configuredText(configured bool) string {
 	if configured {
 		return "configured"
@@ -660,17 +615,6 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func openBrowserURL(rawURL string) error {
-	switch runtime.GOOS {
-	case "darwin":
-		return exec.Command("open", rawURL).Start()
-	case "windows":
-		return exec.Command("rundll32", "url.dll,FileProtocolHandler", rawURL).Start()
-	default:
-		return exec.Command("xdg-open", rawURL).Start()
-	}
 }
 
 func doGoogleJSONRequest(req *http.Request, out any) error {
@@ -746,7 +690,7 @@ func googleAccessToken(ctx context.Context) (string, error) {
 	if token.AccessToken != "" && !token.Expiry.IsZero() && time.Until(token.Expiry) > time.Minute {
 		state.ClientID = settings.clientID
 		state.CredentialStorage = mode
-		if err := saveGoogleDriveState(statePath, state); err != nil {
+		if err := saveGoogleDriveState(statePath, settings, state); err != nil {
 			return "", err
 		}
 		return token.AccessToken, nil
@@ -763,7 +707,7 @@ func googleAccessToken(ctx context.Context) (string, error) {
 	}
 	state.ClientID = settings.clientID
 	state.CredentialStorage = mode
-	if err := saveGoogleDriveState(statePath, state); err != nil {
+	if err := saveGoogleDriveState(statePath, settings, state); err != nil {
 		return "", err
 	}
 	return refreshed.AccessToken, nil

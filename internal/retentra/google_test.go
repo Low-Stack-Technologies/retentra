@@ -55,10 +55,10 @@ func TestGoogleAccessTokenRefreshesExpiredToken(t *testing.T) {
 	}
 	state.ClientID = "client"
 	state.CredentialStorage = googleCredentialStorageFile
-	if err := saveGoogleDriveState(statePath, state); err != nil {
+	if err := saveGoogleDriveState(statePath, loadGoogleSettings(), state); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeGoogleTokenRecord(cachePath, googleTokenRecord{
+	if err := writeGoogleTokenRecord(cachePath, loadGoogleSettings(), googleTokenRecord{
 		ClientID: "client",
 		Scopes:   []string{googleDriveScope},
 		Token: googleToken{
@@ -79,7 +79,7 @@ func TestGoogleAccessTokenRefreshesExpiredToken(t *testing.T) {
 		t.Fatalf("googleAccessToken() = %q, want new-access", got)
 	}
 
-	_, record, err := readGoogleTokenRecord(cachePath)
+	_, record, _, err := readGoogleTokenRecord(cachePath, loadGoogleSettings())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,6 +88,104 @@ func TestGoogleAccessTokenRefreshesExpiredToken(t *testing.T) {
 	}
 	if time.Until(record.Token.Expiry) <= 0 {
 		t.Fatalf("cached token expiry = %s, want future expiry", record.Token.Expiry)
+	}
+}
+
+func TestGoogleTokenRecordEncryptsOnWrite(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("RETENTRA_GOOGLE_CLIENT_ID", "client")
+	t.Setenv("RETENTRA_GOOGLE_CLIENT_SECRET", "secret")
+	t.Setenv("RETENTRA_GOOGLE_CONFIG_DIR", dir)
+
+	settings := loadGoogleSettings()
+	cachePath, err := googleTokenCachePath(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := googleTokenRecord{
+		ClientID: "client",
+		Scopes:   []string{googleDriveScope},
+		Token: googleToken{
+			AccessToken:  "access",
+			RefreshToken: "refresh",
+			TokenType:    "Bearer",
+			Expiry:       time.Now().Add(time.Hour),
+		},
+	}
+	if err := writeGoogleTokenRecord(cachePath, settings, record); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(cachePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(raw, []byte(`"access_token":"access"`)) {
+		t.Fatalf("token file still contains plaintext JSON: %q", raw)
+	}
+	if !bytes.HasPrefix(raw, []byte(googleFileCipherMagic)) {
+		t.Fatalf("token file = %q, want encrypted header", raw)
+	}
+	keyPath, err := googleFileKeyPath(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("key file mode = %o, want 0600", got)
+	}
+	_, loaded, _, err := readGoogleTokenRecord(cachePath, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Token.AccessToken != "access" || loaded.Token.RefreshToken != "refresh" {
+		t.Fatalf("loaded token = %#v, want original token", loaded.Token)
+	}
+}
+
+func TestGoogleDriveStateMigratesPlaintextToEncrypted(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("RETENTRA_GOOGLE_CLIENT_ID", "client")
+	t.Setenv("RETENTRA_GOOGLE_CLIENT_SECRET", "secret")
+	t.Setenv("RETENTRA_GOOGLE_CONFIG_DIR", dir)
+
+	settings := loadGoogleSettings()
+	statePath, err := googleDriveStatePath(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := googleDriveState{
+		ClientID:          "client",
+		CredentialStorage: googleCredentialStorageFile,
+		RootFolderID:      "root-folder",
+		Folders:           map[string]string{"Backups": "folder-1"},
+	}
+	data, err := json.MarshalIndent(legacy, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(statePath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, got, err := loadGoogleDriveState(settings)
+	if err != nil {
+		t.Fatalf("loadGoogleDriveState() error = %v", err)
+	}
+	if got.RootFolderID != legacy.RootFolderID || got.Folders["Backups"] != "folder-1" {
+		t.Fatalf("state = %#v, want legacy state", got)
+	}
+	raw, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(raw, []byte(`"root_folder_id":"root-folder"`)) {
+		t.Fatalf("state file still contains plaintext JSON: %q", raw)
+	}
+	if !bytes.HasPrefix(raw, []byte(googleFileCipherMagic)) {
+		t.Fatalf("state file = %q, want encrypted header", raw)
 	}
 }
 
@@ -368,10 +466,10 @@ func TestUploadGoogleDriveCreatesNestedFoldersAndUploadsArchive(t *testing.T) {
 	}
 	state.ClientID = "client"
 	state.CredentialStorage = googleCredentialStorageFile
-	if err := saveGoogleDriveState(statePath, state); err != nil {
+	if err := saveGoogleDriveState(statePath, loadGoogleSettings(), state); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeGoogleTokenRecord(cachePath, googleTokenRecord{
+	if err := writeGoogleTokenRecord(cachePath, loadGoogleSettings(), googleTokenRecord{
 		ClientID: "client",
 		Scopes:   []string{googleDriveScope},
 		Token: googleToken{

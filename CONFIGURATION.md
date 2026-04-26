@@ -332,9 +332,11 @@ deployments.
 
 Google auth stores tokens in the OS secret store by default. Use
 `retentra auth google login --allow-file-token-storage` only if you explicitly
-want the weaker file-based cache in `~/.config/retentra/google/`.
-Login uses Google'"'"'s limited-input device flow, so the verification step can be
+want encrypted file-backed storage in `~/.config/retentra/google/`.
+Login uses Google's limited-input device flow, so the verification step can be
 completed from another machine over SSH.
+The encrypted file-backed mode also stores a local key file in that directory;
+keep the whole Google config directory together when backing up or restoring.
 
 Drive support is optional. If the Google settings are not present, filesystem,
 SFTP, notifications, and other non-Drive behavior still work normally.

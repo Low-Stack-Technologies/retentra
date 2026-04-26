@@ -190,7 +190,7 @@ func resolveGoogleDriveFolder(ctx context.Context, settings googleSettings, toke
 		state.Folders[currentPath] = childID
 		parentID = childID
 	}
-	if err := writeGoogleDriveState(statePath, state); err != nil {
+	if err := writeGoogleDriveState(statePath, settings, state); err != nil {
 		return "", err
 	}
 	return parentID, nil
@@ -237,7 +237,7 @@ func ensureGoogleDriveRootFolder(ctx context.Context, settings googleSettings, t
 	}
 	state.RootFolderID = id
 	state.Folders = map[string]string{}
-	if err := writeGoogleDriveState(statePath, *state); err != nil {
+	if err := writeGoogleDriveState(statePath, settings, *state); err != nil {
 		return "", err
 	}
 	return id, nil

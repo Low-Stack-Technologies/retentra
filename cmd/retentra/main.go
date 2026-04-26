@@ -352,8 +352,11 @@ Environment:
   RETENTRA_GOOGLE_UPLOAD_BASE_URL
 
 The secret store is used by default. Use --allow-file-token-storage only when
-the OS secret store is unavailable and you explicitly accept weaker storage.
+the OS secret store is unavailable and you want encrypted file-backed storage.
 Login prints a verification URL and code that can be completed from another
 machine over SSH.
+File-backed storage also creates a local key file in the Google config
+directory, so keep that directory intact when backing up or restoring auth
+state.
 `)
 }

@@ -1,7 +1,6 @@
 package retentra
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -27,7 +26,7 @@ func loadGoogleDriveState(settings googleSettings) (string, googleDriveState, er
 	if err != nil {
 		return "", googleDriveState{}, err
 	}
-	state, err := readGoogleDriveState(path)
+	state, plaintext, err := readGoogleDriveState(path, settings)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return path, googleDriveState{Folders: map[string]string{}}, nil
@@ -37,66 +36,30 @@ func loadGoogleDriveState(settings googleSettings) (string, googleDriveState, er
 	if state.Folders == nil {
 		state.Folders = map[string]string{}
 	}
+	if plaintext {
+		if err := writeGoogleDriveState(path, settings, state); err != nil {
+			return "", googleDriveState{}, err
+		}
+	}
 	return path, state, nil
 }
 
-func saveGoogleDriveState(path string, state googleDriveState) error {
-	return writeGoogleDriveState(path, state)
+func saveGoogleDriveState(path string, settings googleSettings, state googleDriveState) error {
+	return writeGoogleDriveState(path, settings, state)
 }
 
-func readGoogleDriveState(path string) (googleDriveState, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return googleDriveState{}, err
-	}
+func readGoogleDriveState(path string, settings googleSettings) (googleDriveState, bool, error) {
 	var state googleDriveState
-	if err := json.Unmarshal(data, &state); err != nil {
-		return googleDriveState{}, err
+	plaintext, err := readGoogleEncryptedJSONFile(path, settings, &state)
+	if err != nil {
+		return googleDriveState{}, false, err
 	}
-	return state, nil
+	return state, plaintext, nil
 }
 
-func writeGoogleDriveState(path string, state googleDriveState) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
+func writeGoogleDriveState(path string, settings googleSettings, state googleDriveState) error {
 	if state.Folders == nil {
 		state.Folders = map[string]string{}
 	}
-	data, err := json.MarshalIndent(state, "", "  ")
-	if err != nil {
-		return err
-	}
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	cleanup := true
-	defer func() {
-		if cleanup {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return err
-	}
-	cleanup = false
-	return nil
+	return writeGoogleEncryptedJSONFile(path, settings, state)
 }
